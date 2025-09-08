@@ -43,3 +43,15 @@ next-env.d.ts
 # firebase
 firebase-debug.log
 firestore-debug.log
+
+
+# bmad
+.bmad-core/*
+web-bundles/
+
+# ai cli
+.claude/*
+.gemini/*
+
+# frontend
+frontend/
