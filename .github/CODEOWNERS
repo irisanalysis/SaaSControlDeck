@@ -1,0 +1,53 @@
+# Global code ownership
+* @irisanalysis/core-team
+
+# Infrastructure and CI/CD
+/.github/ @irisanalysis/devops-team @irisanalysis/senior-engineers
+/docker-compose*.yml @irisanalysis/devops-team
+/Dockerfile @irisanalysis/devops-team
+/**/Dockerfile @irisanalysis/devops-team
+/backend/scripts/ @irisanalysis/devops-team @irisanalysis/backend-team
+
+# Frontend code
+/frontend/ @irisanalysis/frontend-team @irisanalysis/ui-ux-team
+/package.json @irisanalysis/frontend-team @irisanalysis/core-team
+/package-lock.json @irisanalysis/frontend-team
+
+# Backend microservices
+/backend/ @irisanalysis/backend-team @irisanalysis/core-team
+/backend/backend-pro1/ @irisanalysis/backend-team @irisanalysis/ai-team
+/backend/backend-pro2/ @irisanalysis/backend-team @irisanalysis/data-team
+/backend/**/requirements.txt @irisanalysis/backend-team
+
+# AI and ML components
+/frontend/src/ai/ @irisanalysis/ai-team @irisanalysis/frontend-team
+/backend/**/ai-service/ @irisanalysis/ai-team @irisanalysis/backend-team
+
+# Database and data services
+/backend/**/data-service/ @irisanalysis/data-team @irisanalysis/backend-team
+/backend/**/scripts/init-db.sql @irisanalysis/data-team @irisanalysis/backend-team
+
+# Security-sensitive files
+/backend/**/shared/security/ @irisanalysis/security-team @irisanalysis/backend-team
+/.github/workflows/security-monitoring.yml @irisanalysis/security-team @irisanalysis/devops-team
+/**/secrets/ @irisanalysis/security-team @irisanalysis/devops-team
+
+# Documentation
+/README.md @irisanalysis/core-team @irisanalysis/technical-writers
+/CLAUDE.md @irisanalysis/core-team @irisanalysis/technical-writers
+/backend/CLAUDE.md @irisanalysis/backend-team @irisanalysis/technical-writers
+/backend/DEPLOYMENT_GUIDE.md @irisanalysis/devops-team @irisanalysis/technical-writers
+
+# Configuration files
+/*.json @irisanalysis/core-team
+/*.yml @irisanalysis/devops-team
+/*.yaml @irisanalysis/devops-team
+/frontend/tailwind.config.ts @irisanalysis/frontend-team @irisanalysis/ui-ux-team
+/frontend/next.config.ts @irisanalysis/frontend-team @irisanalysis/core-team
+
+# Environment configurations
+/.github/environments/ @irisanalysis/devops-team @irisanalysis/security-team @irisanalysis/core-team
+
+# Monitoring and observability
+/backend/**/monitoring/ @irisanalysis/devops-team @irisanalysis/sre-team
+/.github/workflows/infrastructure-monitoring.yml @irisanalysis/devops-team @irisanalysis/sre-team

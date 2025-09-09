@@ -1,0 +1,286 @@
+version: 2
+updates:
+  # Frontend dependencies
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "irisanalysis/frontend-team"
+      - "irisanalysis/security-team"
+    assignees:
+      - "irisanalysis/frontend-team"
+    commit-message:
+      prefix: "frontend"
+      prefix-development: "frontend-dev"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "frontend"
+      - "automerge"
+    ignore:
+      # Ignore major version updates for stable dependencies
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+    groups:
+      react-ecosystem:
+        patterns:
+          - "react*"
+          - "@types/react*"
+        update-types:
+          - "minor"
+          - "patch"
+      ui-components:
+        patterns:
+          - "@radix-ui/*"
+          - "lucide-react"
+          - "class-variance-authority"
+          - "clsx"
+        update-types:
+          - "minor"
+          - "patch"
+      development-tools:
+        patterns:
+          - "@types/*"
+          - "eslint*"
+          - "prettier*"
+          - "typescript"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Root package.json dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "irisanalysis/core-team"
+    assignees:
+      - "irisanalysis/core-team"
+    commit-message:
+      prefix: "root"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "root"
+
+  # Backend Pro1 Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/backend/backend-pro1"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "10:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "irisanalysis/backend-team"
+      - "irisanalysis/security-team"
+    assignees:
+      - "irisanalysis/backend-team"
+    commit-message:
+      prefix: "backend-pro1"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "backend"
+      - "backend-pro1"
+      - "python"
+    ignore:
+      # Ignore major version updates for critical dependencies
+      - dependency-name: "fastapi"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "sqlalchemy"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "celery"
+        update-types: ["version-update:semver-major"]
+    groups:
+      fastapi-ecosystem:
+        patterns:
+          - "fastapi*"
+          - "uvicorn*"
+          - "starlette*"
+        update-types:
+          - "minor"
+          - "patch"
+      database-tools:
+        patterns:
+          - "sqlalchemy*"
+          - "alembic*"
+          - "asyncpg*"
+        update-types:
+          - "minor"
+          - "patch"
+      async-tools:
+        patterns:
+          - "celery*"
+          - "redis*"
+          - "aiofiles*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Backend Pro2 Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/backend/backend-pro2"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "10:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "irisanalysis/backend-team"
+      - "irisanalysis/security-team"
+    assignees:
+      - "irisanalysis/backend-team"
+    commit-message:
+      prefix: "backend-pro2"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "backend"
+      - "backend-pro2"
+      - "python"
+    ignore:
+      # Ignore major version updates for critical dependencies
+      - dependency-name: "fastapi"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "sqlalchemy"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "celery"
+        update-types: ["version-update:semver-major"]
+    groups:
+      fastapi-ecosystem:
+        patterns:
+          - "fastapi*"
+          - "uvicorn*"
+          - "starlette*"
+        update-types:
+          - "minor"
+          - "patch"
+      database-tools:
+        patterns:
+          - "sqlalchemy*"
+          - "alembic*"
+          - "asyncpg*"
+        update-types:
+          - "minor"
+          - "patch"
+      async-tools:
+        patterns:
+          - "celery*"
+          - "redis*"
+          - "aiofiles*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "11:00"
+    reviewers:
+      - "irisanalysis/devops-team"
+      - "irisanalysis/security-team"
+    assignees:
+      - "irisanalysis/devops-team"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "security"
+
+  - package-ecosystem: "docker"
+    directory: "/backend/backend-pro1"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "11:00"
+    reviewers:
+      - "irisanalysis/devops-team"
+      - "irisanalysis/security-team"
+    assignees:
+      - "irisanalysis/devops-team"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "backend"
+      - "security"
+
+  - package-ecosystem: "docker"
+    directory: "/backend/backend-pro2"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "11:00"
+    reviewers:
+      - "irisanalysis/devops-team"
+      - "irisanalysis/security-team"
+    assignees:
+      - "irisanalysis/devops-team"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "backend"
+      - "security"
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "12:00"
+    reviewers:
+      - "irisanalysis/devops-team"
+      - "irisanalysis/security-team"
+    assignees:
+      - "irisanalysis/devops-team"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "ci-cd"
+      - "github-actions"
+      - "security"
+    groups:
+      actions-setup:
+        patterns:
+          - "actions/setup-*"
+        update-types:
+          - "minor"
+          - "patch"
+      docker-actions:
+        patterns:
+          - "docker/*"
+        update-types:
+          - "minor"
+          - "patch"
+      security-actions:
+        patterns:
+          - "github/codeql-action*"
+          - "aquasecurity/*"
+          - "trufflesecurity/*"
+        update-types:
+          - "minor"
+          - "patch"

@@ -1,10 +1,44 @@
-# CLAUDE.md
+# CLAUDE.md - Full-Stack AI Platform
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Structure
+## Project Architecture Overview
 
-This is a Next.js SaaS dashboard application with AI integration using Firebase Studio. The project has a monorepo structure with the frontend code located in the `frontend/` directory.
+This is a full-stack AI data analysis platform with a modern monorepo structure:
+
+- **Frontend**: Next.js SaaS dashboard with AI integration using Firebase Studio (`frontend/`)
+- **Backend**: Distributed Python microservices architecture (`backend/`)
+
+### Architecture Components
+
+**Frontend Stack:**
+- Next.js 15.3.3 with TypeScript and Tailwind CSS
+- Radix UI components with custom theming
+- Google Genkit for AI flows (Gemini 2.5 Flash)
+- Firebase Studio Nix environment (Port 9000)
+
+**Backend Stack:**  
+- FastAPI microservices (API Gateway, Data Service, AI Service)
+- Multi-project isolation (backend-pro1: 8000-8099, backend-pro2: 8100-8199)
+- PostgreSQL, Redis, MinIO, Ray distributed computing
+- Docker containerization with Prometheus monitoring
+
+## Detailed Documentation
+
+📖 **For specific development guidance, refer to:**
+
+- **Frontend Development**: See existing sections below for Next.js/React patterns
+- **Backend Development**: See `backend/CLAUDE.md` for comprehensive microservices architecture guide
+
+The backend documentation covers:
+- Distributed Python architecture with port allocation
+- FastAPI microservices setup and configuration  
+- Docker containerization and deployment
+- Database schema and API design patterns
+- Shared components, middleware, and authentication
+- Monitoring, logging, and debugging practices
+
+## Project Structure
 
 **Key Architecture:**
 - **Frontend Framework**: Next.js 15.3.3 with TypeScript
@@ -145,3 +179,48 @@ Built on Radix UI primitives with consistent styling:
 2. 检查端口配置是否适合目标环境
 3. 验证所有环境变量是否正确设置
 4. 运行 `npm run build` 确保生产构建无误
+
+---
+
+## Full-Stack Development Context
+
+### Frontend-Backend Integration
+
+The platform follows a decoupled architecture where:
+- **Frontend (Port 9000)**: Handles UI, user interactions, and client-side AI flows
+- **Backend (Ports 8000-8199)**: Provides APIs, data processing, and server-side AI analysis
+
+### Cross-System Communication
+
+**API Integration:**
+- Frontend communicates with backend APIs via HTTP/REST
+- JWT tokens for authentication between frontend and backend
+- WebSocket connections for real-time data updates
+- Shared data models and response formats
+
+**Development Workflow:**
+- Frontend development: Firebase Studio environment (auto-managed)
+- Backend development: Docker Compose environment (manual setup)
+- Both systems can run independently for development
+- Integration testing requires both systems running
+
+### Context Switching Guide
+
+When working on **frontend** tasks:
+- Focus on `frontend/` directory structure
+- Use Firebase Studio Nix environment
+- Reference React/Next.js patterns above
+- API calls should target `http://localhost:8000` (backend-pro1) or `http://localhost:8100` (backend-pro2)
+
+When working on **backend** tasks:
+- Focus on `backend/` directory structure  
+- Reference `backend/CLAUDE.md` for detailed architecture
+- Use Docker Compose for service orchestration
+- APIs should be accessible from `http://localhost:9000` (frontend)
+
+### Quick Reference Links
+
+- **Backend Architecture Details**: [`backend/CLAUDE.md`](backend/CLAUDE.md)
+- **Frontend Development**: See sections below
+- **API Documentation**: Available at backend service `/docs` endpoints
+- **Deployment Guide**: [`backend/DEPLOYMENT_GUIDE.md`](backend/DEPLOYMENT_GUIDE.md)

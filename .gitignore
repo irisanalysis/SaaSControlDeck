@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
+# Dependencies
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -9,49 +9,142 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+**/node_modules/
+package-lock.json
+yarn.lock
 
-# testing
+# Testing
 /coverage
+.nyc_output
+**/coverage/
+jest-coverage/
 
-# next.js
-/.next/
-/out/
+# Frontend - Next.js
+.next/
+out/
+dist/
+frontend/.next/
+frontend/out/
+frontend/dist/
+frontend/build/
 
-# production
+# Backend - Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+backend/**/__pycache__/
+backend/**/venv/
+backend/**/.pytest_cache/
+*.egg-info/
+.tox/
+
+# Production builds
 /build
+build/
+**/build/
 
-# misc
-.DS_Store
-*.pem
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+!.env.example
 
-# debug
+# Logs
+logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+lerna-debug.log*
 
-# vercel
-.vercel
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.pem
 
-# typescript
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# TypeScript
 *.tsbuildinfo
 next-env.d.ts
 
-.genkit/*
-.env*
+# Docker
+.dockerignore
+**/docker-compose.override.yml
 
-# firebase
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Firebase
 firebase-debug.log
 firestore-debug.log
+.firebase/
 
+# Google Cloud
+.gcloud/
 
-# bmad
-.bmad-core/*
+# AI/ML models and data
+*.pkl
+*.joblib
+*.h5
+*.pb
+models/
+data/raw/
+data/processed/
+data/temp/
+
+# Monitoring and metrics
+.prometheus/
+.grafana/
+
+# Jupyter Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Development tools
+.genkit/
+.idx/
+.bmad-core/
 web-bundles/
 
-# ai cli
-.claude/*
-.gemini/*
+# Version management (but keep structure)
+.docs/versions/*/data/
+.docs/versions/*/logs/
+.docs/versions/*/cache/
 
-# frontend
-frontend/
+# CI/CD artifacts
+coverage/
+test-results/
+.nyc_output/
+
+# Vercel
+.vercel

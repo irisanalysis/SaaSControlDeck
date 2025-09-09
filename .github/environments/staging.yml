@@ -1,0 +1,100 @@
+# Staging Environment Configuration
+name: staging
+description: Staging environment for testing and validation
+
+# Environment variables for staging
+variables:
+  NODE_ENV: staging
+  NEXT_PUBLIC_API_URL: https://api-staging.saascontroldeck.com
+  NEXT_PUBLIC_APP_URL: https://staging.saascontroldeck.com
+  DEBUG: "false"
+  LOG_LEVEL: info
+  
+  # Backend configurations
+  DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+  REDIS_URL: ${{ secrets.STAGING_REDIS_URL }}
+  SECRET_KEY: ${{ secrets.STAGING_SECRET_KEY }}
+  
+  # Third-party services
+  OPENAI_API_KEY: ${{ secrets.STAGING_OPENAI_API_KEY }}
+  GOOGLE_API_KEY: ${{ secrets.STAGING_GOOGLE_API_KEY }}
+  
+  # Monitoring and observability
+  SENTRY_DSN: ${{ secrets.STAGING_SENTRY_DSN }}
+  NEW_RELIC_LICENSE_KEY: ${{ secrets.STAGING_NEW_RELIC_LICENSE_KEY }}
+  
+  # Infrastructure
+  MINIO_ENDPOINT: staging-minio.saascontroldeck.com
+  MINIO_ACCESS_KEY: ${{ secrets.STAGING_MINIO_ACCESS_KEY }}
+  MINIO_SECRET_KEY: ${{ secrets.STAGING_MINIO_SECRET_KEY }}
+  
+  # Feature flags
+  ENABLE_ANALYTICS: "true"
+  ENABLE_DEBUG_TOOLS: "true"
+  ENABLE_PERFORMANCE_MONITORING: "true"
+
+# Deployment protection rules
+protection_rules:
+  - type: required_reviewers
+    reviewers:
+      - devops-team
+      - senior-developers
+  
+  - type: wait_timer
+    minutes: 5
+    
+  - type: branch_policy
+    allowed_branches:
+      - develop
+      - feature/*
+      - hotfix/*
+
+# Deployment targets
+deployment:
+  kubernetes:
+    cluster: staging-cluster
+    namespace: saascontroldeck-staging
+    
+  docker:
+    registry: ghcr.io
+    tag_prefix: staging-
+    
+  monitoring:
+    health_check_url: https://staging.saascontroldeck.com/api/health
+    uptime_check_interval: 300
+    alert_channels:
+      - devops-slack
+      - staging-notifications
+
+# Resource limits for staging
+resources:
+  frontend:
+    replicas: 2
+    cpu_limit: "500m"
+    memory_limit: "512Mi"
+    cpu_request: "100m"
+    memory_request: "128Mi"
+    
+  backend_pro1:
+    replicas: 1
+    cpu_limit: "1000m"
+    memory_limit: "1Gi"
+    cpu_request: "200m"
+    memory_request: "256Mi"
+    
+  backend_pro2:
+    replicas: 1
+    cpu_limit: "1000m"
+    memory_limit: "1Gi"
+    cpu_request: "200m"
+    memory_request: "256Mi"
+    
+  database:
+    cpu_limit: "500m"
+    memory_limit: "1Gi"
+    storage: "20Gi"
+    
+  redis:
+    cpu_limit: "200m"
+    memory_limit: "256Mi"
+    storage: "5Gi"

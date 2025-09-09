@@ -1,0 +1,208 @@
+# Production Environment Configuration
+name: production
+description: Production environment with high availability and security
+
+# Environment variables for production
+variables:
+  NODE_ENV: production
+  NEXT_PUBLIC_API_URL: https://api.saascontroldeck.com
+  NEXT_PUBLIC_APP_URL: https://saascontroldeck.com
+  DEBUG: "false"
+  LOG_LEVEL: warn
+  
+  # Backend configurations
+  DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+  REDIS_URL: ${{ secrets.PRODUCTION_REDIS_URL }}
+  SECRET_KEY: ${{ secrets.PRODUCTION_SECRET_KEY }}
+  
+  # Third-party services
+  OPENAI_API_KEY: ${{ secrets.PRODUCTION_OPENAI_API_KEY }}
+  GOOGLE_API_KEY: ${{ secrets.PRODUCTION_GOOGLE_API_KEY }}
+  
+  # Monitoring and observability
+  SENTRY_DSN: ${{ secrets.PRODUCTION_SENTRY_DSN }}
+  NEW_RELIC_LICENSE_KEY: ${{ secrets.PRODUCTION_NEW_RELIC_LICENSE_KEY }}
+  DATADOG_API_KEY: ${{ secrets.PRODUCTION_DATADOG_API_KEY }}
+  
+  # Infrastructure
+  MINIO_ENDPOINT: minio.saascontroldeck.com
+  MINIO_ACCESS_KEY: ${{ secrets.PRODUCTION_MINIO_ACCESS_KEY }}
+  MINIO_SECRET_KEY: ${{ secrets.PRODUCTION_MINIO_SECRET_KEY }}
+  
+  # CDN and caching
+  CDN_URL: https://cdn.saascontroldeck.com
+  REDIS_CACHE_TTL: "3600"
+  
+  # Security
+  CORS_ORIGINS: "https://saascontroldeck.com"
+  RATE_LIMIT_REQUESTS: "1000"
+  RATE_LIMIT_WINDOW: "3600"
+  
+  # Feature flags
+  ENABLE_ANALYTICS: "true"
+  ENABLE_DEBUG_TOOLS: "false"
+  ENABLE_PERFORMANCE_MONITORING: "true"
+  ENABLE_SECURITY_HEADERS: "true"
+
+# Deployment protection rules
+protection_rules:
+  - type: required_reviewers
+    reviewers:
+      - devops-team
+      - tech-leads
+      - security-team
+    minimum_reviewers: 2
+  
+  - type: wait_timer
+    minutes: 10
+    
+  - type: branch_policy
+    allowed_branches:
+      - main
+      - hotfix/*
+      
+  - type: required_status_checks
+    checks:
+      - security-scan
+      - integration-tests
+      - performance-tests
+      
+  - type: deployment_window
+    allowed_hours:
+      - "09:00-17:00"  # Business hours only
+    timezone: "UTC"
+    exclude_weekends: true
+
+# Deployment targets
+deployment:
+  kubernetes:
+    cluster: production-cluster
+    namespace: saascontroldeck-production
+    
+  docker:
+    registry: ghcr.io
+    tag_prefix: prod-
+    
+  load_balancer:
+    type: aws-alb
+    health_check_path: /api/health
+    ssl_policy: ELBSecurityPolicy-TLS-1-2-2017-01
+    
+  monitoring:
+    health_check_url: https://saascontroldeck.com/api/health
+    uptime_check_interval: 60
+    alert_channels:
+      - pagerduty
+      - production-alerts
+      - devops-critical
+
+# Resource configuration for production
+resources:
+  frontend:
+    replicas: 3
+    cpu_limit: "1000m"
+    memory_limit: "1Gi"
+    cpu_request: "200m"
+    memory_request: "256Mi"
+    hpa:
+      min_replicas: 3
+      max_replicas: 10
+      cpu_utilization: 70
+      memory_utilization: 80
+    
+  backend_pro1:
+    replicas: 2
+    cpu_limit: "2000m"
+    memory_limit: "2Gi"
+    cpu_request: "500m"
+    memory_request: "512Mi"
+    hpa:
+      min_replicas: 2
+      max_replicas: 8
+      cpu_utilization: 70
+      memory_utilization: 80
+    
+  backend_pro2:
+    replicas: 2
+    cpu_limit: "2000m"
+    memory_limit: "2Gi"
+    cpu_request: "500m"
+    memory_request: "512Mi"
+    hpa:
+      min_replicas: 2
+      max_replicas: 8
+      cpu_utilization: 70
+      memory_utilization: 80
+    
+  database:
+    type: managed  # AWS RDS, Google Cloud SQL, etc.
+    instance_type: db.r5.xlarge
+    storage: "100Gi"
+    backup_retention: 30
+    multi_az: true
+    
+  redis:
+    type: managed  # AWS ElastiCache, etc.
+    instance_type: cache.m5.large
+    replicas: 2
+    backup_enabled: true
+
+# Security configuration
+security:
+  network_policies:
+    enabled: true
+    ingress_rules:
+      - from_namespaces: ["ingress-nginx"]
+      - from_pods: ["monitoring"]
+    
+  pod_security:
+    run_as_non_root: true
+    read_only_root_filesystem: true
+    allow_privilege_escalation: false
+    
+  secrets_management:
+    provider: vault  # HashiCorp Vault, AWS Secrets Manager, etc.
+    rotation_interval: "90d"
+    
+  compliance:
+    required_labels:
+      - environment: production
+      - team: devops
+      - cost-center: engineering
+      - data-classification: restricted
+
+# Backup and disaster recovery
+backup:
+  database:
+    automated_backups: true
+    backup_window: "03:00-05:00"
+    retention_period: 30
+    cross_region_backup: true
+    
+  file_storage:
+    backup_frequency: daily
+    retention_policy: "1y"
+    
+  application_data:
+    export_frequency: weekly
+    storage_location: s3://saascontroldeck-backups/
+
+# Monitoring and alerting
+monitoring:
+  prometheus:
+    scrape_interval: "30s"
+    retention: "30d"
+    
+  grafana:
+    dashboards:
+      - application-overview
+      - infrastructure-health
+      - business-metrics
+      - security-metrics
+      
+  alerts:
+    response_time_p95: 1000ms
+    error_rate_threshold: 1%
+    cpu_utilization_threshold: 80%
+    memory_utilization_threshold: 85%
+    disk_usage_threshold: 85%

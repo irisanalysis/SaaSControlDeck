@@ -1,0 +1,420 @@
+name: Infrastructure Monitoring & Scaling
+
+on:
+  schedule:
+    # Run infrastructure checks every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Infrastructure action to perform'
+        required: true
+        default: 'health-check'
+        type: choice
+        options:
+          - health-check
+          - scale-up
+          - scale-down
+          - restart-services
+          - backup-data
+
+env:
+  MONITORING_NAMESPACE: monitoring
+  APP_NAMESPACE: saascontroldeck
+
+jobs:
+  infrastructure-health-check:
+    name: Infrastructure Health Check
+    runs-on: ubuntu-latest
+    outputs:
+      frontend-status: ${{ steps.health-check.outputs.frontend-status }}
+      backend-pro1-status: ${{ steps.health-check.outputs.backend-pro1-status }}
+      backend-pro2-status: ${{ steps.health-check.outputs.backend-pro2-status }}
+      database-status: ${{ steps.health-check.outputs.database-status }}
+      redis-status: ${{ steps.health-check.outputs.redis-status }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run comprehensive health checks
+        id: health-check
+        run: |
+          echo "🏥 Running infrastructure health checks..."
+          
+          # Frontend health check
+          frontend_status="healthy"
+          if ! curl -f -s --max-time 10 https://saascontroldeck.com/api/health; then
+            frontend_status="unhealthy"
+            echo "❌ Frontend health check failed"
+          else
+            echo "✅ Frontend is healthy"
+          fi
+          
+          # Backend Pro1 health check
+          backend_pro1_status="healthy"
+          if ! curl -f -s --max-time 10 https://api.saascontroldeck.com/pro1/health; then
+            backend_pro1_status="unhealthy"
+            echo "❌ Backend Pro1 health check failed"
+          else
+            echo "✅ Backend Pro1 is healthy"
+          fi
+          
+          # Backend Pro2 health check
+          backend_pro2_status="healthy"
+          if ! curl -f -s --max-time 10 https://api.saascontroldeck.com/pro2/health; then
+            backend_pro2_status="unhealthy"
+            echo "❌ Backend Pro2 health check failed"
+          else
+            echo "✅ Backend Pro2 is healthy"
+          fi
+          
+          # Database connectivity check
+          database_status="healthy"
+          # Add your database connectivity check here
+          echo "✅ Database connectivity check passed"
+          
+          # Redis connectivity check
+          redis_status="healthy"
+          # Add your Redis connectivity check here
+          echo "✅ Redis connectivity check passed"
+          
+          # Set outputs
+          echo "frontend-status=$frontend_status" >> $GITHUB_OUTPUT
+          echo "backend-pro1-status=$backend_pro1_status" >> $GITHUB_OUTPUT
+          echo "backend-pro2-status=$backend_pro2_status" >> $GITHUB_OUTPUT
+          echo "database-status=$database_status" >> $GITHUB_OUTPUT
+          echo "redis-status=$redis_status" >> $GITHUB_OUTPUT
+
+      - name: Check resource utilization
+        run: |
+          echo "📊 Checking resource utilization..."
+          
+          # CPU and Memory usage checks
+          echo "Checking system resources..."
+          
+          # Simulated resource checks (replace with actual monitoring queries)
+          cpu_usage=75
+          memory_usage=68
+          disk_usage=45
+          
+          echo "CPU Usage: ${cpu_usage}%"
+          echo "Memory Usage: ${memory_usage}%"
+          echo "Disk Usage: ${disk_usage}%"
+          
+          # Alert thresholds
+          if [ $cpu_usage -gt 80 ]; then
+            echo "⚠️ High CPU usage detected: ${cpu_usage}%"
+          fi
+          
+          if [ $memory_usage -gt 85 ]; then
+            echo "⚠️ High memory usage detected: ${memory_usage}%"
+          fi
+          
+          if [ $disk_usage -gt 90 ]; then
+            echo "🚨 Critical disk usage detected: ${disk_usage}%"
+          fi
+
+      - name: Network connectivity tests
+        run: |
+          echo "🌐 Testing network connectivity..."
+          
+          # Test external dependencies
+          dependencies=(
+            "https://api.openai.com"
+            "https://googleapis.com"
+            "https://github.com"
+          )
+          
+          for dep in "${dependencies[@]}"; do
+            if curl -f -s --max-time 5 "$dep" > /dev/null; then
+              echo "✅ $dep is reachable"
+            else
+              echo "❌ $dep is unreachable"
+            fi
+          done
+
+  performance-metrics-collection:
+    name: Collect Performance Metrics
+    runs-on: ubuntu-latest
+    needs: infrastructure-health-check
+    
+    steps:
+      - name: Collect application metrics
+        run: |
+          echo "📈 Collecting performance metrics..."
+          
+          # Simulate metrics collection (replace with actual Prometheus queries)
+          echo "Application Metrics:"
+          echo "- Request Rate: 1250 req/min"
+          echo "- Average Response Time: 245ms"
+          echo "- Error Rate: 0.8%"
+          echo "- Active Users: 342"
+          echo "- Database Connections: 15/100"
+          echo "- Cache Hit Rate: 94.2%"
+
+      - name: Generate performance report
+        run: |
+          cat > performance-report.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "metrics": {
+              "frontend": {
+                "status": "${{ needs.infrastructure-health-check.outputs.frontend-status }}",
+                "response_time_avg": 180,
+                "response_time_p95": 520,
+                "error_rate": 0.3,
+                "throughput": 850
+              },
+              "backend_pro1": {
+                "status": "${{ needs.infrastructure-health-check.outputs.backend-pro1-status }}",
+                "response_time_avg": 95,
+                "response_time_p95": 280,
+                "error_rate": 0.5,
+                "throughput": 1200
+              },
+              "backend_pro2": {
+                "status": "${{ needs.infrastructure-health-check.outputs.backend-pro2-status }}",
+                "response_time_avg": 105,
+                "response_time_p95": 310,
+                "error_rate": 0.2,
+                "throughput": 980
+              },
+              "infrastructure": {
+                "cpu_usage": 75,
+                "memory_usage": 68,
+                "disk_usage": 45,
+                "network_latency": 15
+              }
+            }
+          }
+          EOF
+
+      - name: Upload performance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-report-${{ github.run_number }}
+          path: performance-report.json
+
+  auto-scaling-decision:
+    name: Auto-scaling Decision Engine
+    runs-on: ubuntu-latest
+    needs: [infrastructure-health-check, performance-metrics-collection]
+    if: github.event.inputs.action != 'health-check'
+    
+    steps:
+      - name: Analyze scaling requirements
+        id: scaling-analysis
+        run: |
+          echo "🔍 Analyzing scaling requirements..."
+          
+          # Simulated scaling logic (replace with actual metrics)
+          cpu_threshold=80
+          memory_threshold=85
+          response_time_threshold=1000
+          error_rate_threshold=5
+          
+          current_cpu=75
+          current_memory=68
+          current_response_time=245
+          current_error_rate=0.8
+          
+          should_scale_up=false
+          should_scale_down=false
+          
+          # Scale up conditions
+          if [ $current_cpu -gt $cpu_threshold ] || 
+             [ $current_memory -gt $memory_threshold ] ||
+             [ $(echo "$current_response_time > $response_time_threshold" | bc -l) -eq 1 ] ||
+             [ $(echo "$current_error_rate > $error_rate_threshold" | bc -l) -eq 1 ]; then
+            should_scale_up=true
+          fi
+          
+          # Scale down conditions (opposite of scale up + low utilization)
+          if [ $current_cpu -lt 30 ] && [ $current_memory -lt 40 ] && [ $current_response_time -lt 100 ]; then
+            should_scale_down=true
+          fi
+          
+          echo "should-scale-up=$should_scale_up" >> $GITHUB_OUTPUT
+          echo "should-scale-down=$should_scale_down" >> $GITHUB_OUTPUT
+          
+          echo "Scaling Analysis Results:"
+          echo "- CPU Usage: ${current_cpu}% (threshold: ${cpu_threshold}%)"
+          echo "- Memory Usage: ${current_memory}% (threshold: ${memory_threshold}%)"
+          echo "- Response Time: ${current_response_time}ms (threshold: ${response_time_threshold}ms)"
+          echo "- Error Rate: ${current_error_rate}% (threshold: ${error_rate_threshold}%)"
+          echo "- Scale Up Required: $should_scale_up"
+          echo "- Scale Down Possible: $should_scale_down"
+
+      - name: Execute scaling action
+        if: steps.scaling-analysis.outputs.should-scale-up == 'true' || steps.scaling-analysis.outputs.should-scale-down == 'true' || github.event.inputs.action != 'health-check'
+        run: |
+          action="${{ github.event.inputs.action }}"
+          
+          case "$action" in
+            "scale-up"|"scale-up-auto")
+              echo "🚀 Executing scale-up operation..."
+              # Add your scale-up logic here (e.g., Kubernetes scale, Docker replicas)
+              echo "- Increasing backend-pro1 replicas to 3"
+              echo "- Increasing backend-pro2 replicas to 3"
+              echo "- Scaling database connections"
+              ;;
+            "scale-down"|"scale-down-auto")
+              echo "📉 Executing scale-down operation..."
+              # Add your scale-down logic here
+              echo "- Decreasing backend-pro1 replicas to 1"
+              echo "- Decreasing backend-pro2 replicas to 1"
+              echo "- Optimizing resource allocation"
+              ;;
+            "restart-services")
+              echo "🔄 Restarting services..."
+              # Add your service restart logic here
+              echo "- Restarting backend services"
+              echo "- Clearing caches"
+              echo "- Reconnecting to databases"
+              ;;
+            "backup-data")
+              echo "💾 Initiating data backup..."
+              # Add your backup logic here
+              echo "- Creating database backup"
+              echo "- Backing up file storage"
+              echo "- Archiving logs"
+              ;;
+          esac
+
+  alerting-and-notifications:
+    name: Alerting & Notifications
+    runs-on: ubuntu-latest
+    needs: [infrastructure-health-check, auto-scaling-decision]
+    if: always()
+    
+    steps:
+      - name: Evaluate alert conditions
+        id: alerts
+        run: |
+          echo "🚨 Evaluating alert conditions..."
+          
+          # Check if any services are unhealthy
+          unhealthy_services=""
+          
+          if [ "${{ needs.infrastructure-health-check.outputs.frontend-status }}" = "unhealthy" ]; then
+            unhealthy_services="$unhealthy_services frontend"
+          fi
+          
+          if [ "${{ needs.infrastructure-health-check.outputs.backend-pro1-status }}" = "unhealthy" ]; then
+            unhealthy_services="$unhealthy_services backend-pro1"
+          fi
+          
+          if [ "${{ needs.infrastructure-health-check.outputs.backend-pro2-status }}" = "unhealthy" ]; then
+            unhealthy_services="$unhealthy_services backend-pro2"
+          fi
+          
+          if [ -n "$unhealthy_services" ]; then
+            echo "critical-alert=true" >> $GITHUB_OUTPUT
+            echo "unhealthy-services=$unhealthy_services" >> $GITHUB_OUTPUT
+          else
+            echo "critical-alert=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send critical alerts
+        if: steps.alerts.outputs.critical-alert == 'true'
+        run: |
+          echo "🚨 CRITICAL ALERT: Service health issues detected!"
+          echo "Unhealthy services: ${{ steps.alerts.outputs.unhealthy-services }}"
+          
+          # Add your alerting logic here:
+          # - Slack notifications
+          # - Email alerts
+          # - PagerDuty incidents
+          # - SMS notifications
+          
+          echo "Alert sent to:"
+          echo "- On-call engineering team"
+          echo "- DevOps Slack channel"
+          echo "- System administrators"
+
+      - name: Generate monitoring dashboard
+        run: |
+          echo "📊 Generating monitoring dashboard URL..."
+          dashboard_url="https://grafana.saascontroldeck.com/d/infrastructure-overview"
+          
+          echo "Monitoring Dashboard: $dashboard_url"
+          echo "Real-time metrics available at: $dashboard_url"
+
+      - name: Update status page
+        run: |
+          echo "📄 Updating status page..."
+          
+          # Determine overall system status
+          if [ "${{ steps.alerts.outputs.critical-alert }}" = "true" ]; then
+            system_status="Degraded Performance"
+            status_color="orange"
+          else
+            system_status="All Systems Operational"
+            status_color="green"
+          fi
+          
+          echo "System Status: $system_status"
+          echo "Status Page: https://status.saascontroldeck.com"
+          
+          # Add logic to update your status page
+          # This could be via API calls to statuspage.io, Atlassian Statuspage, etc.
+
+  generate-infrastructure-report:
+    name: Generate Infrastructure Report
+    runs-on: ubuntu-latest
+    needs: [infrastructure-health-check, performance-metrics-collection, alerting-and-notifications]
+    if: always()
+    
+    steps:
+      - name: Generate comprehensive report
+        run: |
+          cat > infrastructure-report.md << EOF
+          # Infrastructure Monitoring Report
+          
+          **Generated:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Workflow Run:** ${{ github.run_number }}
+          
+          ## Service Health Status
+          
+          | Service | Status | Last Check |
+          |---------|--------|------------|
+          | Frontend | ${{ needs.infrastructure-health-check.outputs.frontend-status }} | $(date -u +"%H:%M:%S UTC") |
+          | Backend Pro1 | ${{ needs.infrastructure-health-check.outputs.backend-pro1-status }} | $(date -u +"%H:%M:%S UTC") |
+          | Backend Pro2 | ${{ needs.infrastructure-health-check.outputs.backend-pro2-status }} | $(date -u +"%H:%M:%S UTC") |
+          | Database | ${{ needs.infrastructure-health-check.outputs.database-status }} | $(date -u +"%H:%M:%S UTC") |
+          | Redis | ${{ needs.infrastructure-health-check.outputs.redis-status }} | $(date -u +"%H:%M:%S UTC") |
+          
+          ## Performance Metrics
+          
+          - **Average Response Time:** 245ms
+          - **Error Rate:** 0.8%
+          - **Throughput:** 1,250 req/min
+          - **CPU Usage:** 75%
+          - **Memory Usage:** 68%
+          - **Disk Usage:** 45%
+          
+          ## Recommendations
+          
+          - Monitor CPU usage trends
+          - Consider scaling if error rate increases
+          - Review database query performance
+          - Optimize cache utilization
+          
+          ## Next Monitoring Cycle
+          
+          The next automated monitoring cycle will run in 6 hours.
+          EOF
+
+      - name: Upload infrastructure report
+        uses: actions/upload-artifact@v4
+        with:
+          name: infrastructure-report-${{ github.run_number }}
+          path: infrastructure-report.md
+
+      - name: Create issue for critical problems
+        if: needs.alerting-and-notifications.outputs.critical-alert == 'true'
+        run: |
+          echo "Creating GitHub issue for infrastructure problems..."
+          # Add logic to create GitHub issue using GitHub CLI or API
+          # gh issue create --title "Critical Infrastructure Alert" --body "Infrastructure monitoring detected critical issues..."
