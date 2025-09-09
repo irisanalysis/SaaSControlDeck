@@ -247,7 +247,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./backend/backend-pro1
           file: ./backend/backend-pro1/Dockerfile
@@ -294,7 +294,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./backend/backend-pro2
           file: ./backend/backend-pro2/Dockerfile
