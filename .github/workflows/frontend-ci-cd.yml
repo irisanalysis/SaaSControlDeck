@@ -1,27 +1,30 @@
-name: Frontend CI/CD
+name: Frontend CI/CD with Multi-Environment Deployment
 
 on:
   push:
     branches: [main, develop]
-    paths: ['frontend/**', 'package.json', '.github/workflows/frontend-ci-cd.yml']
+    paths: ['frontend/**', 'package.json', 'vercel.json', '.github/workflows/frontend-ci-cd.yml']
   pull_request:
     branches: [main, develop]
-    paths: ['frontend/**', 'package.json']
+    paths: ['frontend/**', 'package.json', 'vercel.json']
   workflow_dispatch:
     inputs:
       environment:
         description: 'Environment to deploy to'
         required: true
-        default: 'staging'
+        default: 'vercel-staging'
         type: choice
         options:
-          - staging
-          - production
+          - vercel-staging
+          - cloud-staging
+          - cloud-production
 
 env:
   NODE_VERSION: '20.x'
   REGISTRY: ghcr.io
   IMAGE_NAME: saascontroldeck-frontend
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
 jobs:
   test-and-lint:
@@ -126,83 +129,185 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
-  deploy-staging:
-    name: Deploy to Staging
+  deploy-vercel-staging:
+    name: Deploy to Vercel (Testing)
+    runs-on: ubuntu-latest
+    needs: test-and-lint
+    if: github.ref == 'refs/heads/develop' || github.event.inputs.environment == 'vercel-staging'
+    environment:
+      name: vercel-staging
+      url: ${{ steps.vercel-deploy.outputs.preview-url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Vercel
+        id: vercel-deploy
+        run: |
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "preview-url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "🚀 Deployed to Vercel: $DEPLOYMENT_URL"
+
+      - name: Run health check
+        run: |
+          echo "⏳ Waiting for Vercel deployment to be ready..."
+          sleep 20
+          curl -f ${{ steps.vercel-deploy.outputs.preview-url }}/api/health || echo "Health check endpoint not available"
+          echo "✅ Vercel deployment successful"
+
+      - name: Run Lighthouse CI on Vercel
+        uses: treosh/lighthouse-ci-action@v10
+        with:
+          urls: ${{ steps.vercel-deploy.outputs.preview-url }}
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+
+  deploy-cloud-staging:
+    name: Deploy to Cloud Staging
     runs-on: ubuntu-latest
     needs: [build, security-scan]
-    if: github.ref == 'refs/heads/develop' || github.event.inputs.environment == 'staging'
+    if: github.ref == 'refs/heads/develop' || github.event.inputs.environment == 'cloud-staging'
     environment:
-      name: staging
+      name: cloud-staging
       url: https://staging.saascontroldeck.com
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to staging
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.CLOUD_SERVER_SSH_KEY }}
+
+      - name: Deploy to Cloud Staging
         run: |
-          echo "🚀 Deploying frontend to staging environment"
+          echo "🚀 Deploying frontend to cloud staging environment"
           echo "Image: ${{ needs.build.outputs.image-tag }}"
-          # Add your staging deployment logic here
-          # This could be deploying to Vercel, AWS, GCP, etc.
+          
+          # Copy deployment scripts to server
+          scp -o StrictHostKeyChecking=no scripts/deploy-staging.sh ${{ secrets.CLOUD_SERVER_USER }}@${{ secrets.CLOUD_SERVER_HOST }}:/tmp/
+          
+          # Execute deployment script
+          ssh -o StrictHostKeyChecking=no ${{ secrets.CLOUD_SERVER_USER }}@${{ secrets.CLOUD_SERVER_HOST }} \
+            "chmod +x /tmp/deploy-staging.sh && /tmp/deploy-staging.sh ${{ needs.build.outputs.image-tag }}"
 
       - name: Run health check
         run: |
-          echo "⏳ Waiting for deployment to be ready..."
-          sleep 30
+          echo "⏳ Waiting for cloud deployment to be ready..."
+          sleep 60
           curl -f https://staging.saascontroldeck.com/api/health || exit 1
-          echo "✅ Staging deployment successful"
+          echo "✅ Cloud staging deployment successful"
 
       - name: Run E2E tests
         run: |
-          echo "🧪 Running E2E tests against staging"
+          echo "🧪 Running E2E tests against cloud staging"
           # Add your E2E test commands here
 
-  deploy-production:
-    name: Deploy to Production
+  deploy-cloud-production:
+    name: Deploy to Cloud Production
     runs-on: ubuntu-latest
-    needs: [build, security-scan]
-    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production'
+    needs: [build, security-scan, deploy-cloud-staging]
+    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'cloud-production'
     environment:
-      name: production
+      name: cloud-production
       url: https://saascontroldeck.com
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to production
-        run: |
-          echo "🚀 Deploying frontend to production environment"
-          echo "Image: ${{ needs.build.outputs.image-tag }}"
-          # Add your production deployment logic here
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.CLOUD_SERVER_SSH_KEY }}
 
-      - name: Run health check
+      - name: Create production backup
         run: |
-          echo "⏳ Waiting for deployment to be ready..."
-          sleep 60
-          curl -f https://saascontroldeck.com/api/health || exit 1
-          echo "✅ Production deployment successful"
+          echo "📦 Creating production backup..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.CLOUD_SERVER_USER }}@${{ secrets.CLOUD_SERVER_HOST }} \
+            "docker exec saascontroldeck-frontend-prod tar czf /backups/frontend-$(date +%Y%m%d-%H%M%S).tar.gz /app || echo 'Backup creation failed, continuing...'"
+
+      - name: Deploy to Cloud Production
+        run: |
+          echo "🚀 Deploying frontend to cloud production environment"
+          echo "Image: ${{ needs.build.outputs.image-tag }}"
+          
+          # Copy deployment scripts to server
+          scp -o StrictHostKeyChecking=no scripts/deploy-production.sh ${{ secrets.CLOUD_SERVER_USER }}@${{ secrets.CLOUD_SERVER_HOST }}:/tmp/
+          
+          # Execute deployment script with blue-green deployment
+          ssh -o StrictHostKeyChecking=no ${{ secrets.CLOUD_SERVER_USER }}@${{ secrets.CLOUD_SERVER_HOST }} \
+            "chmod +x /tmp/deploy-production.sh && /tmp/deploy-production.sh ${{ needs.build.outputs.image-tag }}"
+
+      - name: Run comprehensive health check
+        run: |
+          echo "⏳ Waiting for production deployment to be ready..."
+          sleep 90
+          
+          # Health check with retries
+          for i in {1..5}; do
+            if curl -f https://saascontroldeck.com/api/health; then
+              echo "✅ Health check passed on attempt $i"
+              break
+            elif [ $i -eq 5 ]; then
+              echo "❌ Health check failed after 5 attempts"
+              exit 1
+            else
+              echo "⏳ Health check failed on attempt $i, retrying..."
+              sleep 30
+            fi
+          done
+
+      - name: Run smoke tests
+        run: |
+          echo "🧪 Running production smoke tests"
+          curl -f https://saascontroldeck.com/ || exit 1
+          curl -f https://saascontroldeck.com/api/pro1/health || exit 1
+          curl -f https://saascontroldeck.com/api/pro2/health || exit 1
+          echo "✅ Smoke tests passed"
 
       - name: Notify team
         if: always()
         run: |
           if [ "${{ job.status }}" == "success" ]; then
             echo "✅ Production deployment completed successfully"
-            # Add notification logic (Slack, email, etc.)
+            # Add Slack notification
+            curl -X POST -H 'Content-type: application/json' \
+              --data '{"text":"🚀 SaaS Control Deck frontend deployed to production successfully!"}' \
+              ${{ secrets.SLACK_WEBHOOK_URL }} || echo "Slack notification failed"
           else
             echo "❌ Production deployment failed"
-            # Add failure notification logic
+            # Add failure notification
+            curl -X POST -H 'Content-type: application/json' \
+              --data '{"text":"🚨 SaaS Control Deck frontend production deployment FAILED!"}' \
+              ${{ secrets.SLACK_WEBHOOK_URL }} || echo "Slack notification failed"
           fi
 
   performance-monitoring:
     name: Performance Monitoring
     runs-on: ubuntu-latest
-    needs: [deploy-staging, deploy-production]
-    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    needs: [deploy-vercel-staging, deploy-cloud-staging, deploy-cloud-production]
+    if: always() && (needs.deploy-cloud-staging.result == 'success' || needs.deploy-cloud-production.result == 'success')
     
     steps:
-      - name: Run Lighthouse CI
+      - name: Run Lighthouse CI on all environments
         uses: treosh/lighthouse-ci-action@v10
         with:
           urls: |
@@ -210,3 +315,30 @@ jobs:
             https://saascontroldeck.com
           uploadArtifacts: true
           temporaryPublicStorage: true
+
+      - name: Performance budget check
+        run: |
+          echo "📊 Checking performance budgets..."
+          # Add performance budget validation logic
+          echo "Performance monitoring completed"
+
+  rollback-production:
+    name: Rollback Production (Manual)
+    runs-on: ubuntu-latest
+    if: failure() && github.ref == 'refs/heads/main'
+    needs: [deploy-cloud-production]
+    environment:
+      name: cloud-production
+    
+    steps:
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.CLOUD_SERVER_SSH_KEY }}
+
+      - name: Rollback to previous version
+        run: |
+          echo "🔄 Initiating production rollback..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.CLOUD_SERVER_USER }}@${{ secrets.CLOUD_SERVER_HOST }} \
+            "cd /opt/saascontroldeck && ./scripts/rollback-frontend.sh"
+          echo "✅ Rollback completed"

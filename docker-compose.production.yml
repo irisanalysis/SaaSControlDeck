@@ -1,0 +1,415 @@
+version: '3.8'
+
+services:
+  # Frontend Production - Blue Container
+  frontend-blue:
+    image: ghcr.io/irisanalysis/saascontroldeck-frontend:${FRONTEND_IMAGE_TAG:-latest}
+    container_name: saascontroldeck-frontend-blue
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_ENVIRONMENT=production
+      - NEXT_PUBLIC_APP_NAME=SaaS Control Deck
+      - BACKEND_PRO1_URL=http://backend-pro1-production:8000
+      - BACKEND_PRO2_URL=http://backend-pro2-production:8100
+      - NEXT_PUBLIC_CDN_URL=https://cdn.saascontroldeck.com
+      - NEXT_PUBLIC_ASSETS_URL=https://assets.saascontroldeck.com
+      - NEXT_PUBLIC_SENTRY_DSN=${SENTRY_DSN}
+      - NEXT_PUBLIC_ANALYTICS_ID=${ANALYTICS_ID}
+    networks:
+      - saascontroldeck-production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - redis-production
+    volumes:
+      - frontend-blue-logs:/app/.next/cache
+      - /etc/localtime:/etc/localtime:ro
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Frontend Production - Green Container
+  frontend-green:
+    image: ghcr.io/irisanalysis/saascontroldeck-frontend:${FRONTEND_IMAGE_TAG:-latest}
+    container_name: saascontroldeck-frontend-green
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_ENVIRONMENT=production
+      - NEXT_PUBLIC_APP_NAME=SaaS Control Deck
+      - BACKEND_PRO1_URL=http://backend-pro1-production:8000
+      - BACKEND_PRO2_URL=http://backend-pro2-production:8100
+      - NEXT_PUBLIC_CDN_URL=https://cdn.saascontroldeck.com
+      - NEXT_PUBLIC_ASSETS_URL=https://assets.saascontroldeck.com
+      - NEXT_PUBLIC_SENTRY_DSN=${SENTRY_DSN}
+      - NEXT_PUBLIC_ANALYTICS_ID=${ANALYTICS_ID}
+    networks:
+      - saascontroldeck-production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - redis-production
+    volumes:
+      - frontend-green-logs:/app/.next/cache
+      - /etc/localtime:/etc/localtime:ro
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Backend Pro1 Production
+  backend-pro1-production:
+    image: ghcr.io/irisanalysis/saascontroldeck-backend-pro1:${BACKEND_PRO1_IMAGE_TAG:-latest}
+    container_name: saascontroldeck-backend-pro1-production
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-production:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis-production:6379/0
+      - MINIO_ENDPOINT=minio-production:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - SENTRY_DSN=${BACKEND_SENTRY_DSN}
+      - LOG_LEVEL=INFO
+    networks:
+      - saascontroldeck-production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - postgres-production
+      - redis-production
+      - minio-production
+    volumes:
+      - backend-pro1-production-logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # Backend Pro2 Production
+  backend-pro2-production:
+    image: ghcr.io/irisanalysis/saascontroldeck-backend-pro2:${BACKEND_PRO2_IMAGE_TAG:-latest}
+    container_name: saascontroldeck-backend-pro2-production
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-production:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis-production:6379/1
+      - MINIO_ENDPOINT=minio-production:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - SENTRY_DSN=${BACKEND_SENTRY_DSN}
+      - LOG_LEVEL=INFO
+    networks:
+      - saascontroldeck-production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - postgres-production
+      - redis-production
+      - minio-production
+    volumes:
+      - backend-pro2-production-logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # PostgreSQL Production with High Availability
+  postgres-production:
+    image: postgres:15-alpine
+    container_name: postgres-production
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-saascontroldeck_production}
+      - POSTGRES_USER=${POSTGRES_USER:-saasuser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS="--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres-production-data:/var/lib/postgresql/data
+      - ./backend/config/postgres/init-production.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./backend/config/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - saascontroldeck-production
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saasuser} -d ${POSTGRES_DB:-saascontroldeck_production}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "5432:5432"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # Redis Production with Persistence
+  redis-production:
+    image: redis:7-alpine
+    container_name: redis-production
+    restart: unless-stopped
+    command: redis-server /etc/redis/redis.conf
+    volumes:
+      - redis-production-data:/data
+      - ./backend/config/redis/redis-production.conf:/etc/redis/redis.conf:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - saascontroldeck-production
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "6379:6379"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # MinIO Production
+  minio-production:
+    image: minio/minio:latest
+    container_name: minio-production
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+      - MINIO_BROWSER_REDIRECT_URL=https://minio-console.saascontroldeck.com
+    volumes:
+      - minio-production-data:/data
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - saascontroldeck-production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Monitoring - Prometheus Production
+  prometheus-production:
+    image: prom/prometheus:latest
+    container_name: prometheus-production
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus-production.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-production-data:/prometheus
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - saascontroldeck-production
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Monitoring - Grafana Production
+  grafana-production:
+    image: grafana/grafana:latest
+    container_name: grafana-production
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_SERVER_DOMAIN=grafana.saascontroldeck.com
+      - GF_SERVER_ROOT_URL=https://grafana.saascontroldeck.com
+      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel
+    volumes:
+      - grafana-production-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - saascontroldeck-production
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # Log Management - ELK Stack (Elasticsearch)
+  elasticsearch-production:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch-production
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+      - xpack.security.enabled=false
+    volumes:
+      - elasticsearch-production-data:/usr/share/elasticsearch/data
+    networks:
+      - saascontroldeck-production
+    ports:
+      - "9200:9200"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # Log Management - Logstash
+  logstash-production:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: logstash-production
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    networks:
+      - saascontroldeck-production
+    depends_on:
+      - elasticsearch-production
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Log Management - Kibana
+  kibana-production:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: kibana-production
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch-production:9200
+      - SERVER_NAME=kibana.saascontroldeck.com
+    ports:
+      - "5601:5601"
+    networks:
+      - saascontroldeck-production
+    depends_on:
+      - elasticsearch-production
+
+networks:
+  saascontroldeck-production:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+
+volumes:
+  # Frontend
+  frontend-blue-logs:
+  frontend-green-logs:
+  
+  # Backend
+  backend-pro1-production-logs:
+  backend-pro2-production-logs:
+  
+  # Database
+  postgres-production-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/saascontroldeck/data/postgres
+  redis-production-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/saascontroldeck/data/redis
+  minio-production-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/saascontroldeck/data/minio
+  
+  # Monitoring
+  prometheus-production-data:
+  grafana-production-data:
+  elasticsearch-production-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/saascontroldeck/data/elasticsearch

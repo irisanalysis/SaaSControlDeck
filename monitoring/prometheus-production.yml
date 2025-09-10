@@ -1,0 +1,125 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: production
+    cluster: saascontroldeck-production
+
+rule_files:
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Frontend Production (Blue-Green)
+  - job_name: 'frontend-blue'
+    static_configs:
+      - targets: ['frontend-blue:3000']
+    metrics_path: '/api/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  - job_name: 'frontend-green'
+    static_configs:
+      - targets: ['frontend-green:3000']
+    metrics_path: '/api/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Backend Pro1 Production
+  - job_name: 'backend-pro1-production'
+    static_configs:
+      - targets: ['backend-pro1-production:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Backend Pro2 Production
+  - job_name: 'backend-pro2-production'
+    static_configs:
+      - targets: ['backend-pro2-production:8100']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Database Monitoring
+  - job_name: 'postgres-production'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Redis Monitoring
+  - job_name: 'redis-production'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # MinIO Monitoring
+  - job_name: 'minio-production'
+    static_configs:
+      - targets: ['minio-production:9000']
+    metrics_path: '/minio/v2/metrics/cluster'
+
+  # Node Exporter (System Metrics)
+  - job_name: 'node-exporter-production'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # cAdvisor (Container Metrics)
+  - job_name: 'cadvisor-production'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 30s
+
+  # Nginx Metrics
+  - job_name: 'nginx-production'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+
+  # Elasticsearch Monitoring
+  - job_name: 'elasticsearch-production'
+    static_configs:
+      - targets: ['elasticsearch-exporter:9114']
+
+  # Blackbox Exporter (External Health Checks)
+  - job_name: 'blackbox-production'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - https://saascontroldeck.com
+        - https://saascontroldeck.com/api/health
+        - https://saascontroldeck.com/api/pro1/health
+        - https://saascontroldeck.com/api/pro2/health
+        - https://grafana.saascontroldeck.com
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # SSL Certificate Monitoring
+  - job_name: 'ssl-certificate-monitoring'
+    metrics_path: /probe
+    params:
+      module: [ssl_cert]
+    static_configs:
+      - targets:
+        - saascontroldeck.com:443
+        - grafana.saascontroldeck.com:443
+        - minio-console.saascontroldeck.com:443
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

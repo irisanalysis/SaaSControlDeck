@@ -148,3 +148,44 @@ test-results/
 
 # Vercel
 .vercel
+
+# claude
+.claude
+
+# gemini
+.gemini
+
+# Deployment secrets and sensitive data
+.env.staging
+.env.production
+.env.vercel
+frontend/.env.vercel
+frontend/.env.production
+frontend/.env.staging
+
+# Backup and recovery files
+/backups/
+*.backup
+*.sql.gz
+*.dump
+*.rdb
+
+# SSL certificates and keys
+*.crt
+*.key
+*.csr
+*.p12
+*.pfx
+
+# Deployment artifacts
+deployment-*.json
+backup-manifest-*.json
+rollback-*.json
+health-check-*.json
+ssl-report-*.txt
+backup-report-*.txt
+disaster-recovery-report-*.txt
+
+# Temporary deployment files
+/tmp/disaster-recovery-*
+/tmp/ssl-config-*

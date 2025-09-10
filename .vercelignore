@@ -1,0 +1,102 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/
+
+# Build outputs
+.next/
+dist/
+build/
+out/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids/
+*.pid
+*.seed
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Documentation
+*.md
+docs/
+
+# Testing
+test/
+tests/
+cypress/
+__tests__/
+
+# Backend services
+backend/
+scripts/deploy*.sh
+
+# Monitoring
+monitoring/
+.lighthouserc.json
+
+# Cache directories
+.cache/
+.parcel-cache/
+
+# Temporary folders
+tmp/
+temp/
+
+# Git
+.git/
+.gitignore
+
+# Package managers
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Claude AI context
+.claude/
+.gemini/

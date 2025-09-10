@@ -1,0 +1,213 @@
+version: '3.8'
+
+services:
+  # Frontend Staging
+  frontend-staging:
+    image: ghcr.io/irisanalysis/saascontroldeck-frontend:${FRONTEND_IMAGE_TAG:-latest}
+    container_name: saascontroldeck-frontend-staging
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_ENVIRONMENT=staging
+      - NEXT_PUBLIC_APP_NAME=SaaS Control Deck
+      - BACKEND_PRO1_URL=http://backend-pro1-staging:8000
+      - BACKEND_PRO2_URL=http://backend-pro2-staging:8100
+      - NEXT_PUBLIC_CDN_URL=https://cdn-staging.saascontroldeck.com
+      - NEXT_PUBLIC_ASSETS_URL=https://assets-staging.saascontroldeck.com
+    networks:
+      - saascontroldeck-staging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - redis-staging
+    volumes:
+      - frontend-staging-logs:/app/.next/cache
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend-staging.rule=Host(`staging.saascontroldeck.com`)"
+      - "traefik.http.routers.frontend-staging.tls=true"
+      - "traefik.http.routers.frontend-staging.tls.certresolver=letsencrypt"
+
+  # Backend Pro1 Staging
+  backend-pro1-staging:
+    image: ghcr.io/irisanalysis/saascontroldeck-backend-pro1:${BACKEND_PRO1_IMAGE_TAG:-latest}
+    container_name: saascontroldeck-backend-pro1-staging
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=staging
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-staging:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis-staging:6379/0
+      - MINIO_ENDPOINT=minio-staging:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+    networks:
+      - saascontroldeck-staging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - postgres-staging
+      - redis-staging
+      - minio-staging
+    volumes:
+      - backend-pro1-staging-logs:/app/logs
+
+  # Backend Pro2 Staging
+  backend-pro2-staging:
+    image: ghcr.io/irisanalysis/saascontroldeck-backend-pro2:${BACKEND_PRO2_IMAGE_TAG:-latest}
+    container_name: saascontroldeck-backend-pro2-staging
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      - ENVIRONMENT=staging
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-staging:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis-staging:6379/1
+      - MINIO_ENDPOINT=minio-staging:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+    networks:
+      - saascontroldeck-staging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - postgres-staging
+      - redis-staging
+      - minio-staging
+    volumes:
+      - backend-pro2-staging-logs:/app/logs
+
+  # PostgreSQL Staging
+  postgres-staging:
+    image: postgres:15-alpine
+    container_name: postgres-staging
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-saascontroldeck_staging}
+      - POSTGRES_USER=${POSTGRES_USER:-saasuser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-staging-data:/var/lib/postgresql/data
+      - ./backend/config/postgres/init-staging.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - saascontroldeck-staging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saasuser} -d ${POSTGRES_DB:-saascontroldeck_staging}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "5433:5432"  # Different port for staging
+
+  # Redis Staging
+  redis-staging:
+    image: redis:7-alpine
+    container_name: redis-staging
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-staging-data:/data
+    networks:
+      - saascontroldeck-staging
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "6380:6379"  # Different port for staging
+
+  # MinIO Staging
+  minio-staging:
+    image: minio/minio:latest
+    container_name: minio-staging
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+    volumes:
+      - minio-staging-data:/data
+    networks:
+      - saascontroldeck-staging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "9001:9000"   # API
+      - "9002:9001"   # Console
+
+  # Monitoring - Prometheus Staging
+  prometheus-staging:
+    image: prom/prometheus:latest
+    container_name: prometheus-staging
+    restart: unless-stopped
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus-staging.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-staging-data:/prometheus
+    networks:
+      - saascontroldeck-staging
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+  # Monitoring - Grafana Staging
+  grafana-staging:
+    image: grafana/grafana:latest
+    container_name: grafana-staging
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_SERVER_DOMAIN=staging-grafana.saascontroldeck.com
+      - GF_SERVER_ROOT_URL=https://staging-grafana.saascontroldeck.com
+    volumes:
+      - grafana-staging-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - saascontroldeck-staging
+
+networks:
+  saascontroldeck-staging:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  # Frontend
+  frontend-staging-logs:
+  
+  # Backend
+  backend-pro1-staging-logs:
+  backend-pro2-staging-logs:
+  
+  # Database
+  postgres-staging-data:
+  redis-staging-data:
+  minio-staging-data:
+  
+  # Monitoring
+  prometheus-staging-data:
+  grafana-staging-data:
