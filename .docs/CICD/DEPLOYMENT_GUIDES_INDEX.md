@@ -1,27 +1,39 @@
-# 部署指南索引
+# CI/CD 部署指南索引
 
 ## 📚 可用部署文档
 
-### 🔧 故障排除指南
+### 🔧 [项目配置文件索引](./PROJECT_CONFIG_INDEX.md)
+快速访问所有重要的项目配置文件和说明
+- **vercel.json** - Vercel 部署配置
+- **package.json** - 依赖和脚本管理  
+- **next.config.ts** - Next.js 框架配置
+- **tsconfig.json** - TypeScript 配置
+- **tailwind.config.ts** - 样式配置
 
-#### [Vercel部署故障排除完整指南](./VERCEL_DEPLOYMENT_TROUBLESHOOTING.md)
+---
+
+### 🔧 Vercel 部署
+
+#### [📁 Vercel 部署文档目录](./vercel/)
+- **主文档：** [Vercel 部署完整指南](./vercel/README.md)
+- **故障排除：** [部署问题解决方案](./vercel/VERCEL_DEPLOYMENT_TROUBLESHOOTING.md)
 - **状态：** ✅ 已验证 (2024年12月)
 - **成功部署：** https://saascontrol3.vercel.app
-- **覆盖问题：**
-  - npm ci 错误 - package-lock.json 缺失
-  - Vercel配置语法错误 (`nodejs` 属性)
-  - 模块解析失败 - @/components 路径别名
-  - nodeVersion 属性错误
-  - Next.js 版本检测失败
-- **适用于：** Next.js 15.3.3, Monorepo结构, TypeScript项目
+- **技术栈：** Next.js 15.3.3, Monorepo结构, TypeScript
 
-### 🚀 成功配置模板
+### 🚀 其他平台部署
 
-#### Vercel配置 (已验证)
-- **Root Directory：** `frontend`
-- **Framework：** Next.js (自动检测)
-- **导入方式：** 相对路径导入
-- **配置文件：** 简化的vercel.json
+#### GitHub Actions (计划中)
+- **状态：** 📋 规划中
+- **用途：** 自动化测试和构建流程
+
+#### Docker 容器部署 (计划中)  
+- **状态：** 📋 规划中
+- **用途：** 生产环境容器化部署
+
+#### 云服务器部署 (计划中)
+- **状态：** 📋 规划中  
+- **用途：** 生产环境直接部署
 
 ---
 

@@ -7,18 +7,24 @@ This directory contains project documentation and version management files for t
 ```
 .docs/
 ├── README.md                                    # This file
-├── DEPLOYMENT_GUIDES_INDEX.md                  # 🔍 部署指南索引
-├── VERCEL_DEPLOYMENT_TROUBLESHOOTING.md        # 🔧 Vercel部署故障排除
-├── versions/                                   # Version management directory
+├── CICD/                                       # 🚀 CI/CD 部署文档
+│   ├── DEPLOYMENT_GUIDES_INDEX.md             #   📋 部署指南总索引
+│   ├── vercel/                                #   🔧 Vercel 部署专区
+│   │   ├── README.md                          #     Vercel 文档主页
+│   │   └── VERCEL_DEPLOYMENT_TROUBLESHOOTING.md #  完整故障排除指南
+│   ├── github-actions/                        #   ⚡ GitHub Actions (计划中)
+│   ├── docker/                                #   🐳 Docker 部署 (计划中)
+│   └── cloud-server/                          #   ☁️  云服务器部署 (计划中)
+├── versions/                                   # 📦 Version management directory
 │   ├── v1.0.0/                                # Version-specific documentation
 │   │   ├── CHANGELOG.md                       # Changes in this version
 │   │   ├── RELEASE_NOTES.md                   # Release notes
 │   │   ├── MIGRATION.md                       # Migration guide
 │   │   └── docs/                              # Version-specific docs
 │   └── latest/                                # Symlink to latest version
-├── architecture/                              # System architecture docs
-├── api/                                       # API documentation
-└── deployment/                                # Deployment guides
+├── architecture/                              # 🏗️ System architecture docs
+├── api/                                       # 🔗 API documentation
+└── user-guides/                               # 📖 User documentation
 ```
 
 ## Version Management Guidelines
@@ -41,13 +47,21 @@ This directory contains project documentation and version management files for t
 
 ## 🚀 快速导航
 
-### 部署相关
-- **[部署指南索引](./DEPLOYMENT_GUIDES_INDEX.md)** - 所有部署文档的快速导航
-- **[Vercel部署故障排除](./VERCEL_DEPLOYMENT_TROUBLESHOOTING.md)** - 完整的Vercel部署问题解决方案
+### CI/CD 部署相关
+- **[📋 CI/CD 部署指南总索引](./CICD/DEPLOYMENT_GUIDES_INDEX.md)** - 所有部署平台的导航中心
+- **[🔧 Vercel 部署专区](./CICD/vercel/)** - Vercel 平台完整部署文档
+  - [主文档](./CICD/vercel/README.md) - Vercel 部署概览和快速开始
+  - [故障排除](./CICD/vercel/VERCEL_DEPLOYMENT_TROUBLESHOOTING.md) - 完整的问题解决方案
+  - **成功部署：** https://saascontrol3.vercel.app ✅
 
 ### 版本管理
-- **[v1.0.0 版本文档](./versions/v1.0.0/)** - 初始平台发布版本
-- **[最新版本](./versions/latest/)** - 当前最新版本文档
+- **[📦 v1.0.0 版本文档](./versions/v1.0.0/)** - 初始平台发布版本
+- **[📦 最新版本](./versions/latest/)** - 当前最新版本文档
+
+### 其他文档分类
+- **[🏗️ 系统架构](./architecture/)** - 系统设计和技术架构 (计划中)
+- **[🔗 API 文档](./api/)** - REST API 文档和示例 (计划中)  
+- **[📖 用户指南](./user-guides/)** - 最终用户文档 (计划中)
 
 ---
 
