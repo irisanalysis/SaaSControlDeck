@@ -33,7 +33,7 @@ jobs:
 
       - name: Setup Python for Backend scans
         if: matrix.component != 'frontend'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -151,7 +151,7 @@ jobs:
           license-checker --summary --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC'
 
       - name: Setup Python for backend license check
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
