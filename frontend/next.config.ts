@@ -4,11 +4,8 @@ const nextConfig: NextConfig = {
   // Enable standalone output for Docker deployment
   output: 'standalone',
   
-  // Enable experimental features for performance
-  experimental: {
-    // Enable Server Components optimization
-    serverComponentsExternalPackages: ['@genkit-ai/googleai'],
-  },
+  // Server external packages for Server Components optimization
+  serverExternalPackages: ['@genkit-ai/googleai'],
 
   // Environment variables
   env: {
@@ -128,8 +125,8 @@ const nextConfig: NextConfig = {
   // React strict mode
   reactStrictMode: true,
   
-  // SWC minification
-  swcMinify: true,
+  // SWC minification (default in Next.js 13+)
+  // swcMinify: true, // Removed as it's default
   
   // ESLint during builds
   eslint: {
