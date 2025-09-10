@@ -88,14 +88,59 @@ const nextConfig: NextConfig = {
   
   // Webpack optimization for Vercel
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+    const path = require('path');
+    
+    // Determine the correct source path for both local dev and Vercel deployment
+    // In Vercel: process.cwd() = '/vercel/path0/frontend'
+    // In local dev: process.cwd() = '/path/to/project/studio' or '/path/to/project/studio/frontend'
+    const srcPath = (() => {
+      const cwd = process.cwd();
+      const fs = require('fs');
+      
+      // Check if we're already in the frontend directory (Vercel case)
+      if (cwd.endsWith('frontend') || fs.existsSync(path.join(cwd, 'src'))) {
+        return path.resolve(cwd, 'src');
+      }
+      
+      // We're in the project root, need to go into frontend/src
+      const frontendSrcPath = path.resolve(cwd, 'frontend/src');
+      if (fs.existsSync(frontendSrcPath)) {
+        return frontendSrcPath;
+      }
+      
+      // Fallback: try to find src directory
+      const possiblePaths = [
+        path.resolve(cwd, 'src'),
+        path.resolve(cwd, '../src'),
+        path.resolve(cwd, 'frontend/src')
+      ];
+      
+      for (const possiblePath of possiblePaths) {
+        if (fs.existsSync(possiblePath)) {
+          return possiblePath;
+        }
+      }
+      
+      // Ultimate fallback
+      return path.resolve(cwd, 'src');
+    })();
+    
+    // Debug information for troubleshooting
+    if (process.env.NODE_ENV !== 'production' || process.env.DEBUG_MODULE_RESOLUTION) {
+      console.log('Next.js Webpack Module Resolution Debug:');
+      console.log('  CWD:', process.cwd());
+      console.log('  Resolved srcPath:', srcPath);
+      console.log('  Button exists:', fs.existsSync(path.join(srcPath, 'components/ui/button.tsx')));
+    }
+    
     // Configure path aliases for robust module resolution
     config.resolve.alias = {
       ...config.resolve.alias,
-      '@': require('path').resolve(process.cwd(), 'frontend/src'),
-      '@/components': require('path').resolve(process.cwd(), 'frontend/src/components'),
-      '@/lib': require('path').resolve(process.cwd(), 'frontend/src/lib'),
-      '@/hooks': require('path').resolve(process.cwd(), 'frontend/src/hooks'),
-      '@/ai': require('path').resolve(process.cwd(), 'frontend/src/ai'),
+      '@': srcPath,
+      '@/components': path.resolve(srcPath, 'components'),
+      '@/lib': path.resolve(srcPath, 'lib'),
+      '@/hooks': path.resolve(srcPath, 'hooks'),
+      '@/ai': path.resolve(srcPath, 'ai'),
     };
     
     // Ignore handlebars warnings from Genkit
