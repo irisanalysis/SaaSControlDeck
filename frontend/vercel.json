@@ -1,0 +1,17 @@
+{
+  "buildCommand": "npm ci --production=false && npm run build",
+  "outputDirectory": ".next",
+  "framework": "nextjs",
+  "installCommand": "npm ci --production=false",
+  "nodeVersion": "20.x",
+  "env": {
+    "DEBUG_MODULE_RESOLUTION": "1"
+  },
+  "build": {
+    "env": {
+      "DEBUG_MODULE_RESOLUTION": "1",
+      "VERCEL": "1",
+      "NODE_ENV": "production"
+    }
+  }
+}

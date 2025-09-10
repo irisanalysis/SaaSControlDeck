@@ -89,59 +89,119 @@ const nextConfig: NextConfig = {
   // Webpack optimization for Vercel
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
     const path = require('path');
+    const fs = require('fs');
     
-    // Determine the correct source path for both local dev and Vercel deployment
-    // In Vercel: process.cwd() = '/vercel/path0/frontend'
-    // In local dev: process.cwd() = '/path/to/project/studio' or '/path/to/project/studio/frontend'
+    // Robust path resolution for both monorepo and standalone scenarios
     const srcPath = (() => {
       const cwd = process.cwd();
-      const fs = require('fs');
       
-      // Check if we're already in the frontend directory (Vercel case)
-      if (cwd.endsWith('frontend') || fs.existsSync(path.join(cwd, 'src'))) {
-        return path.resolve(cwd, 'src');
+      // Strategy 1: Check if we have src directory in current working directory
+      const cwdSrc = path.join(cwd, 'src');
+      if (fs.existsSync(cwdSrc)) {
+        return cwdSrc;
       }
       
-      // We're in the project root, need to go into frontend/src
-      const frontendSrcPath = path.resolve(cwd, 'frontend/src');
-      if (fs.existsSync(frontendSrcPath)) {
-        return frontendSrcPath;
+      // Strategy 2: Check if we're in a subdirectory and need to go up
+      const parentSrc = path.resolve(cwd, '../src');
+      if (fs.existsSync(parentSrc)) {
+        return parentSrc;
       }
       
-      // Fallback: try to find src directory
-      const possiblePaths = [
-        path.resolve(cwd, 'src'),
-        path.resolve(cwd, '../src'),
-        path.resolve(cwd, 'frontend/src')
-      ];
+      // Strategy 3: Check for frontend/src pattern
+      const frontendSrc = path.join(cwd, 'frontend/src');
+      if (fs.existsSync(frontendSrc)) {
+        return frontendSrc;
+      }
       
-      for (const possiblePath of possiblePaths) {
-        if (fs.existsSync(possiblePath)) {
-          return possiblePath;
+      // Strategy 4: Check if we're already in frontend and need to find src
+      if (cwd.includes('frontend')) {
+        const srcInFrontend = path.join(cwd, 'src');
+        if (fs.existsSync(srcInFrontend)) {
+          return srcInFrontend;
         }
       }
       
-      // Ultimate fallback
+      // Fallback: assume current directory structure
       return path.resolve(cwd, 'src');
     })();
     
+    // Ensure all critical paths exist
+    const requiredPaths = {
+      components: path.join(srcPath, 'components'),
+      lib: path.join(srcPath, 'lib'), 
+      hooks: path.join(srcPath, 'hooks'),
+      ai: path.join(srcPath, 'ai')
+    };
+    
+    // Validate path structure
+    const pathsExist = Object.entries(requiredPaths).map(([key, dir]) => {
+      const exists = fs.existsSync(dir);
+      return { key, dir, exists };
+    });
+    
     // Debug information for troubleshooting
-    if (process.env.NODE_ENV !== 'production' || process.env.DEBUG_MODULE_RESOLUTION) {
-      console.log('Next.js Webpack Module Resolution Debug:');
-      console.log('  CWD:', process.cwd());
-      console.log('  Resolved srcPath:', srcPath);
-      console.log('  Button exists:', fs.existsSync(path.join(srcPath, 'components/ui/button.tsx')));
+    const isDebugMode = process.env.NODE_ENV !== 'production' || process.env.DEBUG_MODULE_RESOLUTION || process.env.VERCEL;
+    
+    if (isDebugMode) {
+      console.log('\n🔧 NEXT.JS WEBPACK MODULE RESOLUTION DEBUG');
+      console.log('Environment:', {
+        NODE_ENV: process.env.NODE_ENV,
+        VERCEL: process.env.VERCEL,
+        cwd: process.cwd(),
+        srcPath
+      });
+      
+      console.log('Path validation:');
+      pathsExist.forEach(({ key, dir, exists }) => {
+        console.log(`  📁 ${key}: ${exists ? '✅' : '❌'} ${dir}`);
+      });
+      
+      // Test critical component imports
+      const criticalComponents = [
+        'components/ui/button.tsx',
+        'components/ui/tabs.tsx', 
+        'components/dashboard/profile-card.tsx',
+        'components/dashboard/pending-approvals-card.tsx',
+        'lib/utils.ts'
+      ];
+      
+      console.log('Component resolution test:');
+      criticalComponents.forEach(comp => {
+        const fullPath = path.join(srcPath, comp);
+        const exists = fs.existsSync(fullPath);
+        console.log(`  📦 ${comp}: ${exists ? '✅ FOUND' : '❌ MISSING'} ${fullPath}`);
+      });
     }
     
-    // Configure path aliases for robust module resolution
+    // Configure robust path aliases
+    const aliases = {
+      '@': srcPath,
+      '@/components': requiredPaths.components,
+      '@/lib': requiredPaths.lib,
+      '@/hooks': requiredPaths.hooks,
+      '@/ai': requiredPaths.ai
+    };
+    
     config.resolve.alias = {
       ...config.resolve.alias,
-      '@': srcPath,
-      '@/components': path.resolve(srcPath, 'components'),
-      '@/lib': path.resolve(srcPath, 'lib'),
-      '@/hooks': path.resolve(srcPath, 'hooks'),
-      '@/ai': path.resolve(srcPath, 'ai'),
+      ...aliases
     };
+    
+    // Ensure module resolution can find dependencies in both local and parent node_modules
+    config.resolve.modules = [
+      path.join(process.cwd(), 'node_modules'),
+      path.resolve(process.cwd(), '../node_modules'),
+      'node_modules'
+    ];
+    
+    if (isDebugMode) {
+      console.log('Webpack aliases configured:');
+      Object.entries(aliases).forEach(([alias, path]) => {
+        console.log(`  🔗 ${alias} → ${path}`);
+      });
+      console.log('Module resolution paths:', config.resolve.modules);
+      console.log('=== END DEBUG ===\n');
+    }
     
     // Ignore handlebars warnings from Genkit
     config.ignoreWarnings = [
