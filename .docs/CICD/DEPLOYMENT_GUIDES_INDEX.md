@@ -34,6 +34,15 @@
 - **[部署指南](./DEPLOYMENT_GUIDE.md)** - 通用部署指南
 - **[Vercel部署指南](./VERCEL_DEPLOYMENT_GUIDE.md)** - Vercel特定部署说明
 
+### ☁️ 云服务器部署
+- **状态：** ✅ 已配置完成
+- **主文档：** [云服务器部署指南](./CLOUD_SERVER_DEPLOYMENT_GUIDE.md)
+- **用途：** AWS、阿里云、腾讯云等云服务器完整部署方案
+- **包含内容：** 服务器配置、Docker部署、Nginx代理、SSL证书、监控维护
+
+### 📝 项目管理文档
+- **[项目重组总结](../PROJECT_RESTRUCTURE_SUMMARY.md)** - 最新的目录结构重组详情
+
 ### ⚙️ GitHub Actions
 - **状态：** ✅ 已配置完成
 - **工作流：** [GitHub Actions配置](./github/workflows/.github/)
