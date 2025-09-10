@@ -31,7 +31,7 @@ fi
 
 # Verify package.json scripts
 echo -e "${YELLOW}🔍 Verifying build scripts...${NC}"
-if npm run-script --silent 2>/dev/null | grep -q "vercel-build"; then
+if npm run-script 2>/dev/null | grep -q "vercel-build"; then
     echo "✅ vercel-build script found"
 else
     echo -e "${RED}❌ vercel-build script missing${NC}"
