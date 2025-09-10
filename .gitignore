@@ -10,7 +10,7 @@ node_modules/
 !.yarn/releases
 !.yarn/versions
 **/node_modules/
-package-lock.json
+frontend/package-lock.json
 yarn.lock
 
 # Testing
