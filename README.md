@@ -69,12 +69,22 @@ saas-control-deck/
 │   │   ├── shared/            # Shared components
 │   │   └── docker-compose.yml # Service orchestration
 │   ├── backend-pro2/           # Project 2 (Ports 8100-8199)
-│   ├── scripts/               # Management scripts
 │   └── CLAUDE.md              # Backend development guide
-├── .docs/                      # Comprehensive documentation
-│   ├── CICD/                  # CI/CD and deployment guides
-│   ├── architecture/          # System architecture docs
-│   └── versions/              # Version management
+├── docker/                      # 🐳 Docker deployment configurations
+│   ├── environments/           # Environment-specific configs
+│   │   ├── docker-compose.production.yml # Production deployment
+│   │   ├── docker-compose.staging.yml    # Staging environment
+│   │   └── docker-compose.ci.yml         # CI/CD environment
+│   ├── services/              # Service configurations (symlinks)
+│   └── monitoring/            # Prometheus & Grafana configs
+├── .docs/                      # 📚 Comprehensive documentation
+│   ├── CICD/                  # CI/CD deployment guides and configs
+│   │   ├── vercel/           # Vercel-specific deployment docs
+│   │   ├── github/           # GitHub Actions workflows
+│   │   ├── testing/          # Deployment testing tools
+│   │   └── scripts/          # Deployment automation scripts
+│   ├── architecture/          # System architecture documentation
+│   └── versions/              # Version management and releases
 ├── package.json               # Root package configuration
 ├── vercel.json                # Vercel deployment config
 └── README.md                  # This file
@@ -210,25 +220,47 @@ npm run genkit:watch
 **Build Command**: `npm run vercel-build`
 **Root Directory**: `frontend`
 
-### Docker Deployment (Backend)
+### Docker Deployment
 
+**Complete Docker deployment configurations available in [`docker/`](docker/) directory.**
+
+#### Production Environment
 ```bash
-# Build and start all services
+# Start production services
+cd docker/environments
+docker-compose -f docker-compose.production.yml --env-file .env.production up -d
+
+# Monitor services
+docker-compose -f docker-compose.production.yml ps
+docker-compose -f docker-compose.production.yml logs -f
+```
+
+#### Staging Environment
+```bash
+# Start staging environment
+cd docker/environments
+docker-compose -f docker-compose.staging.yml --env-file .env.staging up -d
+```
+
+#### Development Services
+```bash
+# Individual backend services
 cd backend/backend-pro1
 docker-compose up -d
-
-# View logs
-docker-compose logs -f
 
 # Health check
 curl http://localhost:8000/health
 ```
 
+**📖 Complete Docker Guide**: [docker/README.md](docker/README.md)
+
 ## 📚 Documentation
 
 ### Comprehensive Guides
 - **[Backend Architecture Guide](backend/CLAUDE.md)** - Complete backend development guide
+- **[Docker Deployment Guide](docker/README.md)** - Complete Docker orchestration and deployment
 - **[Vercel Deployment Guide](.docs/CICD/vercel/README.md)** - Deployment troubleshooting and setup
+- **[CI/CD Documentation Hub](.docs/CICD/DEPLOYMENT_GUIDES_INDEX.md)** - All deployment documentation
 - **[System Architecture](.docs/architecture/SYSTEM_ARCHITECTURE.md)** - High-level system overview
 
 ### API Documentation
@@ -238,8 +270,9 @@ curl http://localhost:8000/health
 
 ### Development References
 - **Frontend Development**: See `CLAUDE.md` for detailed patterns and guidelines
-- **Component Library**: All UI components documented in `src/components/ui/`
-- **AI Integration**: Google Genkit flows in `src/ai/flows/`
+- **Component Library**: All UI components documented in `frontend/src/components/ui/`
+- **AI Integration**: Google Genkit flows in `frontend/src/ai/flows/`
+- **Configuration Files**: See [`.docs/CICD/PROJECT_CONFIG_INDEX.md`](.docs/CICD/PROJECT_CONFIG_INDEX.md)
 
 ## 🔍 Troubleshooting
 

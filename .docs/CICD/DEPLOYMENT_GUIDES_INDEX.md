@@ -21,19 +21,27 @@
 - **成功部署：** https://saascontrol3.vercel.app
 - **技术栈：** Next.js 15.3.3, Monorepo结构, TypeScript
 
-### 🚀 其他平台部署
+### 🐳 Docker 容器部署
+- **状态：** ✅ 已配置完成
+- **主文档：** [Docker 部署指南](../../docker/README.md)
+- **生产环境：** [生产级Docker配置](../../docker/environments/docker-compose.production.yml)
+- **测试环境：** [测试环境配置](../../docker/environments/docker-compose.staging.yml)
+- **CI/CD环境：** [持续集成配置](../../docker/environments/docker-compose.ci.yml)
 
-#### GitHub Actions (计划中)
-- **状态：** 📋 规划中
-- **用途：** 自动化测试和构建流程
+### 📊 部署文档集合
+- **[CI/CD 设置指南](./CI_CD_SETUP_GUIDE.md)** - 完整的CI/CD管道设置
+- **[部署修复总结](./DEPLOYMENT_FIX_SUMMARY.md)** - 已解决的部署问题汇总
+- **[部署指南](./DEPLOYMENT_GUIDE.md)** - 通用部署指南
+- **[Vercel部署指南](./VERCEL_DEPLOYMENT_GUIDE.md)** - Vercel特定部署说明
 
-#### Docker 容器部署 (计划中)  
-- **状态：** 📋 规划中
-- **用途：** 生产环境容器化部署
+### ⚙️ GitHub Actions
+- **状态：** ✅ 已配置完成
+- **工作流：** [GitHub Actions配置](./github/workflows/.github/)
+- **用途：** 自动化测试、构建和部署流程
 
-#### 云服务器部署 (计划中)
-- **状态：** 📋 规划中  
-- **用途：** 生产环境直接部署
+### 🧪 测试和验证
+- **[测试工具](./testing/)** - 部署验证脚本和测试工具
+- **[部署脚本](./scripts/)** - 自动化部署和管理脚本
 
 ---
 

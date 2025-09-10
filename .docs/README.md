@@ -7,14 +7,25 @@ This directory contains project documentation and version management files for t
 ```
 .docs/
 ├── README.md                                    # This file
-├── CICD/                                       # 🚀 CI/CD 部署文档
+├── CICD/                                       # 🚀 CI/CD 部署文档中心
 │   ├── DEPLOYMENT_GUIDES_INDEX.md             #   📋 部署指南总索引
+│   ├── PROJECT_CONFIG_INDEX.md                #   🔧 项目配置文件索引
 │   ├── vercel/                                #   🔧 Vercel 部署专区
 │   │   ├── README.md                          #     Vercel 文档主页
-│   │   └── VERCEL_DEPLOYMENT_TROUBLESHOOTING.md #  完整故障排除指南
-│   ├── github-actions/                        #   ⚡ GitHub Actions (计划中)
-│   ├── docker/                                #   🐳 Docker 部署 (计划中)
-│   └── cloud-server/                          #   ☁️  云服务器部署 (计划中)
+│   │   ├── VERCEL_DEPLOYMENT_TROUBLESHOOTING.md #  完整故障排除指南
+│   │   └── .vercelignore                      #     Vercel 忽略配置
+│   ├── github/                                #   ⚡ GitHub Actions
+│   │   └── workflows/                         #     工作流配置文件
+│   ├── testing/                               #   🧪 测试和验证工具
+│   │   ├── test-imports.mjs                   #     导入测试脚本
+│   │   └── verify-deployment.mjs              #     部署验证脚本
+│   ├── scripts/                               #   📜 部署管理脚本
+│   ├── CI_CD_SETUP_GUIDE.md                   #   CI/CD 设置指南
+│   ├── DEPLOYMENT_FIX_SUMMARY.md              #   部署问题修复汇总
+│   ├── DEPLOYMENT_GUIDE.md                    #   通用部署指南
+│   ├── VERCEL_DEPLOYMENT_GUIDE.md             #   Vercel 专用部署指南
+│   ├── .lighthouserc.json                     #   性能测试配置
+│   └── .markdownlint.json                     #   文档规范配置
 ├── versions/                                   # 📦 Version management directory
 │   ├── v1.0.0/                                # Version-specific documentation
 │   │   ├── CHANGELOG.md                       # Changes in this version
