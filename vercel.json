@@ -1,11 +1,9 @@
 {
   "version": 2,
-  "name": "saascontroldeck-frontend",
   "framework": "nextjs",
-  "buildCommand": "npm run build",
+  "buildCommand": "cd frontend && npm ci --prefer-offline --no-audit --no-fund && npm run build",
   "outputDirectory": "frontend/.next",
-  "installCommand": "npm ci --prefer-offline --no-audit --no-fund",
-  "devCommand": "npm run dev",
+  "installCommand": "npm --version",
   "functions": {
     "frontend/src/app/api/**/*.ts": {
       "runtime": "@vercel/node"
@@ -14,79 +12,15 @@
   "env": {
     "NODE_ENV": "production",
     "NEXT_PUBLIC_APP_NAME": "SaaS Control Deck",
-    "NEXT_PUBLIC_ENVIRONMENT": "vercel",
-    "VERCEL": "1",
-    "CI": "true"
+    "NEXT_PUBLIC_ENVIRONMENT": "vercel"
   },
   "build": {
     "env": {
       "NODE_ENV": "production",
-      "VERCEL": "1",
-      "CI": "true",
       "SKIP_TYPE_CHECK": "true"
     }
   },
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        },
-        {
-          "key": "X-Content-Type-Options", 
-          "value": "nosniff"
-        },
-        {
-          "key": "X-XSS-Protection",
-          "value": "1; mode=block"
-        },
-        {
-          "key": "Referrer-Policy",
-          "value": "strict-origin-when-cross-origin"
-        },
-        {
-          "key": "Permissions-Policy",
-          "value": "camera=(), microphone=(), geolocation=()"
-        }
-      ]
-    },
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "GET, POST, PUT, DELETE, OPTIONS"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type, Authorization"
-        }
-      ]
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/api/pro1/:path*",
-      "destination": "https://api-staging.saascontroldeck.com/pro1/:path*"
-    },
-    {
-      "source": "/api/pro2/:path*", 
-      "destination": "https://api-staging.saascontroldeck.com/pro2/:path*"
-    }
-  ],
   "regions": ["iad1"],
   "cleanUrls": true,
-  "trailingSlash": false,
-  "crons": [],
-  "github": {
-    "enabled": true,
-    "autoAlias": true,
-    "silent": true
-  }
+  "trailingSlash": false
 }
