@@ -1,8 +1,8 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  // Enable standalone output for Docker deployment
-  output: 'standalone',
+  // Remove standalone output for Vercel deployment
+  // output: 'standalone',  // Commented out for Vercel compatibility
   
   // Server external packages for Server Components optimization
   serverExternalPackages: ['@genkit-ai/googleai'],
@@ -19,22 +19,6 @@ const nextConfig: NextConfig = {
     return process.env.GIT_COMMIT || `build-${Date.now()}`;
   },
 
-  // Webpack configuration for bundle optimization
-  webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
-    // Bundle analyzer in development
-    if (process.env.ANALYZE === 'true') {
-      const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
-      config.plugins.push(
-        new BundleAnalyzerPlugin({
-          analyzerMode: 'static',
-          openAnalyzer: false,
-          reportFilename: isServer ? '../analyze/server.html' : './analyze/client.html',
-        })
-      );
-    }
-
-    return config;
-  },
 
   // Security headers
   async headers() {
@@ -93,7 +77,36 @@ const nextConfig: NextConfig = {
   // TypeScript configuration
   typescript: {
     // Type checking is handled by separate CI step in production
-    ignoreBuildErrors: process.env.NODE_ENV === 'production',
+    ignoreBuildErrors: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1',
+  },
+  
+  // Experimental features for faster builds - disabled for stability
+  // experimental: {
+  //   optimizeCss: true,
+  //   forceSwcTransforms: true,
+  // },
+  
+  // Webpack optimization for Vercel
+  webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+    // Ignore handlebars warnings from Genkit
+    config.ignoreWarnings = [
+      /require\.extensions is not supported by webpack/,
+      /Cannot resolve module 'critters'/
+    ];
+    
+    // Bundle analyzer in development only
+    if (process.env.ANALYZE === 'true' && !process.env.VERCEL) {
+      const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
+      config.plugins.push(
+        new BundleAnalyzerPlugin({
+          analyzerMode: 'static',
+          openAnalyzer: false,
+          reportFilename: isServer ? '../analyze/server.html' : './analyze/client.html',
+        })
+      );
+    }
+
+    return config;
   },
   
   // Image optimization

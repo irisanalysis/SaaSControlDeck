@@ -2,9 +2,9 @@
   "version": 2,
   "name": "saascontroldeck-frontend",
   "framework": "nextjs",
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run vercel-build",
   "outputDirectory": "frontend/.next",
-  "installCommand": "npm install",
+  "installCommand": "npm ci --prefer-offline --no-audit --no-fund --ignore-scripts",
   "devCommand": "npm run dev",
   "functions": {
     "frontend/src/app/api/**/*.ts": {
@@ -14,11 +14,16 @@
   "env": {
     "NODE_ENV": "production",
     "NEXT_PUBLIC_APP_NAME": "SaaS Control Deck",
-    "NEXT_PUBLIC_ENVIRONMENT": "vercel"
+    "NEXT_PUBLIC_ENVIRONMENT": "vercel",
+    "VERCEL": "1",
+    "CI": "true"
   },
   "build": {
     "env": {
-      "NODE_ENV": "production"
+      "NODE_ENV": "production",
+      "VERCEL": "1",
+      "CI": "true",
+      "SKIP_TYPE_CHECK": "true"
     }
   },
   "headers": [
@@ -83,5 +88,8 @@
     "enabled": true,
     "autoAlias": true,
     "silent": true
+  },
+  "nodejs": {
+    "runtime": "nodejs18.x"
   }
 }

@@ -1,6 +1,6 @@
 # Dependencies
-node_modules/
-frontend/node_modules/
+# node_modules/  # Don't ignore root node_modules for Vercel
+frontend/node_modules/  # Ignore duplicate frontend node_modules
 backend/
 
 # Build outputs
@@ -92,10 +92,12 @@ temp/
 .git/
 .gitignore
 
-# Package managers
-package-lock.json
+# Package managers (keep root package-lock.json for Vercel)
+# package-lock.json  # Commented out - Vercel needs this for faster installs
 yarn.lock
 pnpm-lock.yaml
+frontend/package-lock.json
+frontend/node_modules/
 
 # Claude AI context
 .claude/
