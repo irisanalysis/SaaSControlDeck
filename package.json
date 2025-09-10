@@ -10,7 +10,7 @@
     "start": "cd frontend && next start",
     "lint": "cd frontend && next lint",
     "typecheck": "cd frontend && tsc --noEmit",
-    "vercel-build": "cd frontend && next build",
+    "vercel-build": "cd frontend && npm ci --production=false && next build",
     "postinstall": "echo 'Installation completed successfully'"
   },
   "dependencies": {

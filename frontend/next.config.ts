@@ -88,6 +88,16 @@ const nextConfig: NextConfig = {
   
   // Webpack optimization for Vercel
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+    // Configure path aliases for robust module resolution
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': require('path').resolve(process.cwd(), 'frontend/src'),
+      '@/components': require('path').resolve(process.cwd(), 'frontend/src/components'),
+      '@/lib': require('path').resolve(process.cwd(), 'frontend/src/lib'),
+      '@/hooks': require('path').resolve(process.cwd(), 'frontend/src/hooks'),
+      '@/ai': require('path').resolve(process.cwd(), 'frontend/src/ai'),
+    };
+    
     // Ignore handlebars warnings from Genkit
     config.ignoreWarnings = [
       /require\.extensions is not supported by webpack/,
