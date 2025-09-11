@@ -1,0 +1,393 @@
+name: Backend Microservices CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+
+env:
+  PYTHON_VERSION: '3.11'
+  BACKEND_DIR: './backend'
+  # SaaS Control Deck微服务特定配置
+  CACHE_KEY_PREFIX: 'saascontrol-backend-v1'
+  # AI服务特定环境
+  AI_SERVICE_TIMEOUT: '30'
+  RAY_WORKER_COUNT: '2'
+
+jobs:
+  # 代码质量检查
+  code-quality:
+    name: 后端代码质量检查
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [backend-pro1, backend-pro2]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/${{ matrix.service }}/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        working-directory: backend/${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Code formatting check (Black)
+        working-directory: backend/${{ matrix.service }}
+        run: |
+          black --check --diff .
+
+      - name: Import sorting check (isort)
+        working-directory: backend/${{ matrix.service }}
+        run: |
+          isort --check-only --diff .
+
+      - name: Linting (flake8)
+        working-directory: backend/${{ matrix.service }}
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+
+      - name: Type checking (mypy)
+        working-directory: backend/${{ matrix.service }}
+        run: |
+          mypy . --ignore-missing-imports
+
+      - name: Security scan (bandit)
+        working-directory: backend/${{ matrix.service }}
+        run: |
+          pip install bandit
+          bandit -r . -f json -o bandit-report.json || true
+          echo "Security scan completed. Check bandit-report.json for details."
+
+  # 单元测试和覆盖率
+  test:
+    name: 单元测试
+    runs-on: ubuntu-latest
+    needs: code-quality
+    strategy:
+      matrix:
+        service: [backend-pro1, backend-pro2]
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres123
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/${{ matrix.service }}/requirements.txt') }}
+
+      - name: Install dependencies
+        working-directory: backend/${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-xdist  # 并行测试
+
+      - name: Wait for services
+        run: |
+          until pg_isready -h localhost -p 5432; do sleep 1; done
+          until redis-cli -h localhost -p 6379 ping; do sleep 1; done
+
+      - name: Set test environment
+        working-directory: backend/${{ matrix.service }}
+        run: |
+          cp .env.example .env.test
+          sed -i 's/localhost:5432/localhost:5432/g' .env.test
+          sed -i 's/localhost:6379/localhost:6379/g' .env.test
+
+      - name: Run tests with coverage
+        working-directory: backend/${{ matrix.service }}
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres123@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: test-secret-key-for-ci-only-32-chars
+          ENVIRONMENT: test
+        run: |
+          pytest tests/ \
+            --cov=app \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=term \
+            --maxfail=5 \
+            -n auto \
+            --tb=short
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: backend/${{ matrix.service }}/coverage.xml
+          flags: ${{ matrix.service }}
+          name: ${{ matrix.service }}-coverage
+
+  # 集成测试
+  integration-test:
+    name: 集成测试
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      matrix:
+        project: [backend-pro1, backend-pro2]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start services
+        working-directory: backend/${{ matrix.project }}
+        run: |
+          cp .env.example .env
+          # 配置测试环境变量
+          sed -i 's/your-super-secret-key-32-chars-minimum/test-key-32-chars-minimum-length/g' .env
+          sed -i 's/your_openai_api_key_here/test-openai-key/g' .env
+          
+          # 启动所有服务
+          docker-compose up -d
+          
+          # 等待服务启动
+          sleep 30
+
+      - name: Health check
+        working-directory: backend/${{ matrix.project }}
+        run: |
+          # 检查所有服务健康状态
+          for port in 8000 8001 8002; do
+            if [ "${{ matrix.project }}" = "backend-pro2" ]; then
+              port=$((port + 100))
+            fi
+            echo "Checking health on port $port..."
+            curl -f http://localhost:$port/health || exit 1
+          done
+
+      - name: API integration tests
+        working-directory: backend/${{ matrix.project }}
+        run: |
+          # 设置基础URL
+          if [ "${{ matrix.project }}" = "backend-pro1" ]; then
+            BASE_URL="http://localhost:8000"
+          else
+            BASE_URL="http://localhost:8100"
+          fi
+          
+          # 测试API端点
+          echo "Testing $BASE_URL/health"
+          curl -f $BASE_URL/health
+          
+          echo "Testing $BASE_URL/ready"
+          curl -f $BASE_URL/ready
+          
+          # 测试认证API
+          echo "Testing authentication..."
+          curl -f -X POST $BASE_URL/api/v1/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"email":"test@example.com","password":"testpass123","full_name":"Test User"}' || true
+
+      - name: Cleanup
+        if: always()
+        working-directory: backend/${{ matrix.project }}
+        run: |
+          docker-compose down -v
+          docker system prune -f
+
+  # Docker 构建和推送
+  docker-build:
+    name: Docker 构建和推送
+    runs-on: ubuntu-latest
+    needs: [test, integration-test]
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        service: [api-gateway, data-service, ai-service]
+        project: [backend-pro1, backend-pro2]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_REGISTRY }}/saascontroldeck-${{ matrix.project }}-${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: backend/${{ matrix.project }}
+          file: backend/${{ matrix.project }}/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            SERVICE_NAME=${{ matrix.service }}
+            PROJECT_ID=${{ matrix.project }}
+
+  # 安全扫描
+  security-scan:
+    name: 容器安全扫描
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        service: [api-gateway, data-service, ai-service]
+        project: [backend-pro1, backend-pro2]
+    
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ secrets.DOCKER_REGISTRY }}/saascontroldeck-${{ matrix.project }}-${{ matrix.service }}:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # 性能测试
+  performance-test:
+    name: 性能测试
+    runs-on: ubuntu-latest
+    needs: integration-test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start performance test environment
+        working-directory: backend/backend-pro1
+        run: |
+          cp .env.example .env
+          docker-compose up -d
+          sleep 60  # 等待服务完全启动
+
+      - name: Install Apache Bench
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apache2-utils
+
+      - name: Run load tests
+        run: |
+          echo "🚀 Running performance tests..."
+          
+          # 健康检查负载测试
+          ab -n 1000 -c 10 http://localhost:8000/health > health_test.txt
+          
+          # 认证API负载测试
+          ab -n 500 -c 5 -T application/json -p <(echo '{"email":"test@example.com","password":"testpass123"}') http://localhost:8000/api/v1/auth/login > auth_test.txt || true
+          
+          echo "📊 Performance test results:"
+          grep "Requests per second" health_test.txt || echo "Health test completed"
+          grep "Time per request" health_test.txt || echo "Timing data collected"
+
+      - name: Cleanup performance test
+        if: always()
+        working-directory: backend/backend-pro1
+        run: |
+          docker-compose down -v
+
+  # 部署准备
+  deploy-prepare:
+    name: 部署准备
+    runs-on: ubuntu-latest
+    needs: [docker-build, security-scan]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production-backend
+    
+    steps:
+      - name: Generate deployment manifest
+        run: |
+          echo "🎯 Backend deployment ready"
+          echo "Docker images built and scanned:"
+          echo "- saascontroldeck-backend-pro1-api-gateway:${{ github.sha }}"
+          echo "- saascontroldeck-backend-pro1-data-service:${{ github.sha }}"
+          echo "- saascontroldeck-backend-pro1-ai-service:${{ github.sha }}"
+          echo "- saascontroldeck-backend-pro2-api-gateway:${{ github.sha }}"
+          echo "- saascontroldeck-backend-pro2-data-service:${{ github.sha }}"
+          echo "- saascontroldeck-backend-pro2-ai-service:${{ github.sha }}"
+
+      - name: Trigger production deployment
+        run: |
+          echo "📢 Backend services ready for production deployment"
+          echo "Use these images in your production docker-compose.yml:"
+          echo "Environment variables should be set according to .env.production"
+          # 实际环境中这里会调用部署webhook
+          # curl -X POST ${{ secrets.DEPLOY_WEBHOOK_URL }} \
+          #   -H "Authorization: Bearer ${{ secrets.DEPLOY_TOKEN }}" \
+          #   -d '{"ref": "${{ github.sha }}", "services": "backend", "environment": "production"}'

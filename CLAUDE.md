@@ -224,3 +224,201 @@ When working on **backend** tasks:
 - **Frontend Development**: See sections below
 - **API Documentation**: Available at backend service `/docs` endpoints
 - **Deployment Guide**: [`backend/DEPLOYMENT_GUIDE.md`](backend/DEPLOYMENT_GUIDE.md)
+- **Archive System Guide**: [`.archive/CLAUDE.md`](.archive/CLAUDE.md) - Project archival and historical reference system
+
+---
+
+## 📁 Archive System (.archive/)
+
+### Project Historical Repository
+
+The `.archive/` directory is a comprehensive archival system designed for the SaaS Control Deck Full-Stack AI Platform, supporting rapid 6-day development cycles while maintaining complete project history.
+
+#### Core Purpose
+- **🏗️ Preserve Technical Evolution**: Document architectural decisions, deprecated features, and technology stack changes
+- **🔍 Enable Historical Research**: Quick access to past implementations, solutions, and lessons learned  
+- **📋 Support Decision Making**: Reference previous approaches and outcomes for informed development choices
+- **⚡ Accelerate Development**: Avoid reimplementing existing solutions by learning from archived patterns
+
+#### Directory Structure Overview
+```
+.archive/
+├── systems/          # Technical component archives (Frontend, Backend, AI, Infrastructure)
+├── timeline/         # Chronological project milestones and evolution
+├── experiments/      # POCs, A/B tests, and research outcomes
+├── releases/         # Version artifacts, deployment configs, and release notes
+├── decisions/        # Architecture Decision Records (ADRs) and technical debt tracking
+├── team/            # Multi-agent collaboration patterns and workflow evolution
+├── security/        # Security audits, incident responses, and vulnerability tracking
+├── recovery/        # Disaster recovery procedures and incident post-mortems
+└── compliance/      # Legal, regulatory, and policy change documentation
+```
+
+#### When Claude Should Use Archives
+
+**🔍 Before Implementation**: Always check archives first
+```bash
+# Search for similar features
+grep -r "authentication" .archive/systems/backend/
+grep -r "dashboard" .archive/systems/frontend/
+
+# Check deprecated approaches to avoid
+ls .archive/systems/*/deprecated-*/
+```
+
+**🔧 During Development**: Reference proven patterns
+- Frontend: Check `.archive/systems/frontend/ui-experiments/` for UI patterns
+- Backend: Review `.archive/systems/backend/performance-optimizations/` for proven solutions
+- AI Systems: Reference `.archive/systems/ai/prompt-engineering/` for effective approaches
+
+**📋 After Implementation**: Document new patterns
+- Archive deprecated code to appropriate `systems/*/legacy-*/` directories
+- Record architectural decisions in `decisions/architecture/`
+- Save experiment results in `experiments/ab-tests/` or `experiments/performance-tests/`
+
+#### Key Integration Points
+
+**Technology Stack Archives**:
+- **Next.js 15.3.3**: Component evolution in `systems/frontend/legacy-components/`
+- **FastAPI Microservices**: API versioning in `systems/backend/api-versions/`
+- **Google Genkit AI**: Model versions in `systems/ai/model-versions/`
+- **Docker/CI/CD**: Pipeline evolution in `systems/infrastructure/ci-cd-pipelines/`
+
+**Multi-Agent Collaboration**:
+- **Agent Configurations**: Team coordination patterns in `team/agent-configurations/`
+- **Workflow Evolution**: 6-day sprint optimizations in `team/workflow-evolution/`
+- **Decision History**: Cross-agent architectural decisions in `decisions/architecture/`
+
+#### Archive Management Guidelines
+
+**✅ What to Archive**:
+- Deprecated features and components (>30 days unused)
+- Completed experiments (success or failure)
+- Major architectural changes and refactors
+- Security incidents and their resolutions
+- Performance optimization attempts and results
+
+**❌ What NOT to Archive**:
+- Current working code
+- Sensitive credentials or API keys
+- Large binary files (without compression)
+- Temporary development artifacts
+
+#### Quick Archive Commands
+```bash
+# Search archives for solutions
+find .archive/ -name "*authentication*" -o -name "*user*"
+grep -r "performance issue" .archive/systems/backend/
+
+# Check recent archives
+find .archive/ -type f -mtime -30 | sort
+
+# Review architectural decisions
+cat .archive/decisions/architecture/001-microservices-adoption.md
+```
+
+**📖 Complete Archive Guide**: See [`.archive/CLAUDE.md`](.archive/CLAUDE.md) for detailed usage instructions, search patterns, and project-specific archival strategies.
+
+---
+
+## CI/CD & DevOps Automation
+
+### SaaSControl-Pro Specialized Agents
+
+**Agent Directory**: `.claude/agents/SaaSControl-Pro/`
+
+This project includes specialized Claude Code agents designed specifically for the SaaS Control Deck platform. These agents have deep knowledge of our unique architecture and can perform automated tasks with project-specific optimizations.
+
+#### CI/CD Workflow Specialist Agent
+
+**Location**: `.claude/agents/SaaSControl-Pro/cicd-workflow-specialist.md`
+
+**专家级CI/CD自动化代理 - 针对SaaS Control Deck项目优化**
+
+The `cicd-workflow-specialist` agent is a specialized CI/CD automation expert with comprehensive knowledge of our platform's specific architecture and deployment requirements. This agent should be used for ALL CI/CD related tasks.
+
+**Key Capabilities:**
+- **Multi-Environment Deployment**: Automated staging and production deployments via Vercel
+- **Microservices Orchestration**: Handles backend-pro1 (8000-8099) and backend-pro2 (8100-8199) port allocations
+- **GitHub Actions Optimization**: SaaS Control Deck specific workflow configurations
+- **Docker Container Management**: Multi-service containerization with health checks
+- **Security & Monitoring**: Integrated Prometheus metrics, security scanning, and alerting
+
+**Architecture Knowledge:**
+- Next.js 15.3.3 frontend with Firebase Studio Nix environment
+- Python FastAPI microservices (API Gateway, Data Service, AI Service)
+- Vercel deployment integration (Team: `team_5qxA92e7EhxCquOBE7DO3lrP`)
+- Docker registry management and image optimization
+- Health check APIs for 6 microservices monitoring
+
+**When to Use This Agent:**
+- Setting up or modifying CI/CD pipelines
+- Troubleshooting deployment issues
+- Optimizing build and deployment performance  
+- Implementing new deployment environments
+- Configuring monitoring and alerting systems
+- Any DevOps automation tasks
+
+**Usage Example:**
+```markdown
+# To launch the CI/CD specialist agent
+Use Task tool with subagent_type: "cicd-workflow-specialist"
+
+# Example tasks:
+- "Optimize our GitHub Actions workflow for faster builds"
+- "Set up monitoring for our microservices deployment"
+- "Troubleshoot Vercel deployment configuration issues"
+- "Implement blue-green deployment strategy"
+- "Add security scanning to our CI pipeline"
+```
+
+**⚠️ Important Usage Notes:**
+- This agent has **complete CI/CD implementation authority** for the SaaS Control Deck project
+- It understands our specific port allocations, service dependencies, and deployment constraints
+- Always prefer this agent over generic DevOps tools for project-specific tasks
+- The agent can perform automated setup, configuration, and troubleshooting
+
+**Project-Specific Configurations:**
+- **Vercel Integration**: Pre-configured with project credentials and team settings
+- **Health Check Endpoints**: Automated monitoring for all 6 microservices  
+- **Security Scanning**: Trivy container scanning and dependency vulnerability checks
+- **Performance Optimization**: AI platform specific caching and build optimizations
+- **Multi-Stage Builds**: Optimized Docker configurations for Python FastAPI services
+
+### CI/CD Pipeline Architecture
+
+**Current Implementation Status**: ✅ **Production Ready**
+
+Our CI/CD pipeline follows the validated flow:
+```
+Firebase Studio (Dev) → GitHub (Version Control) → Vercel (Staging/Production) → Docker (Cloud Deployment)
+```
+
+**Automated Workflows:**
+1. **Code Quality Assurance** - TypeScript checks, ESLint, security audits
+2. **Multi-Environment Testing** - Automated build verification for development and production
+3. **Vercel Deployment** - Automated staging and production deployments
+4. **Docker Containerization** - Multi-service container builds with security scanning
+5. **Health Monitoring** - Automated health checks and deployment verification
+
+**Monitoring & Alerting:**
+- Prometheus metrics collection across all services
+- Automated deployment status notifications
+- Health check verification post-deployment
+- Security vulnerability scanning and reporting
+
+### Quick CI/CD Commands
+
+```bash
+# Trigger full CI/CD pipeline
+git push origin main
+
+# Test staging deployment
+git push origin develop
+
+# Manual health check
+curl -f "https://[your-vercel-domain]/api/health"
+
+# Validate CI/CD configuration
+./scripts/ci/validate-saascontrol-setup.sh
+```

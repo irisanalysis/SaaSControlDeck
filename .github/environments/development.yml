@@ -1,0 +1,58 @@
+# GitHub Environment: Development
+# 用于开发分支的环境配置
+
+name: development
+description: 开发环境配置
+
+# 保护规则
+protection_rules:
+  wait_timer: 0  # 无等待时间
+  reviewers: []  # 无需审查
+  prevent_self_review: false
+
+# 环境变量
+variables:
+  ENVIRONMENT: development
+  LOG_LEVEL: DEBUG
+  FRONTEND_URL: https://dev-saascontroldeck.vercel.app
+  BACKEND_URL: http://localhost:8000
+  
+  # Node.js配置
+  NODE_ENV: development
+  NODE_VERSION: '18'
+  
+  # Python配置
+  PYTHON_VERSION: '3.11'
+  PYTHONPATH: /app
+  
+  # 数据库配置
+  DB_POOL_SIZE: '5'
+  DB_MAX_OVERFLOW: '10'
+  
+  # Redis配置
+  REDIS_MAX_CONNECTIONS: '10'
+  
+  # AI服务配置
+  AI_MODEL_TIMEOUT: '30'
+  RAY_WORKER_COUNT: '2'
+
+# 密钥配置 (需要在GitHub Secrets中配置)
+secrets:
+  # 基础认证
+  - SECRET_KEY  # JWT密钥
+  - DATABASE_URL  # 数据库连接字符串
+  - REDIS_URL  # Redis连接字符串
+  
+  # 第三方服务
+  - OPENAI_API_KEY  # OpenAI API密钥
+  - SENTRY_DSN  # Sentry错误追踪
+  
+  # Vercel部署
+  - VERCEL_TOKEN  # Vercel部署令牌
+  - VERCEL_ORG_ID  # Vercel组织ID
+  - VERCEL_PROJECT_ID  # Vercel项目ID
+  
+  # 容器注册表
+  - DOCKER_REGISTRY  # Docker注册表地址
+  - DOCKER_USERNAME  # Docker用户名
+  - DOCKER_PASSWORD  # Docker密码

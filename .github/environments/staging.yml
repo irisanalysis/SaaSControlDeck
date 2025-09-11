@@ -1,0 +1,84 @@
+# GitHub Environment: Staging
+# 用于预生产测试环境的配置
+
+name: staging
+description: 预生产测试环境
+
+# 中等保护规则
+protection_rules:
+  wait_timer: 60  # 1分钟等待时间
+  reviewers:
+    - type: user
+      id: # 替换为QA负责人的GitHub用户ID
+  prevent_self_review: false
+  required_reviewers: 1
+
+# 部署分支策略
+deployment_branch_policy:
+  protected_branches: false
+  custom_branch_policies: true
+  custom_branches:
+    - develop
+    - release/*
+    - hotfix/*
+
+# 环境变量
+variables:
+  ENVIRONMENT: staging
+  LOG_LEVEL: INFO
+  FRONTEND_URL: https://staging-saascontroldeck.vercel.app
+  BACKEND_URL: https://staging-api.saascontroldeck.com
+  
+  # Node.js预生产配置
+  NODE_ENV: production
+  NODE_VERSION: '18'
+  NEXT_TELEMETRY_DISABLED: '1'
+  
+  # Python预生产配置
+  PYTHON_VERSION: '3.11'
+  PYTHONPATH: /app
+  
+  # 数据库配置
+  DB_POOL_SIZE: '10'
+  DB_MAX_OVERFLOW: '15'
+  
+  # Redis配置
+  REDIS_MAX_CONNECTIONS: '20'
+  
+  # AI服务配置
+  AI_MODEL_TIMEOUT: '45'
+  RAY_WORKER_COUNT: '4'
+  
+  # 测试配置
+  ENABLE_TEST_ENDPOINTS: 'true'
+  TEST_DATA_ENABLED: 'true'
+  DEBUG_METRICS: 'true'
+  
+  # 性能配置
+  GUNICORN_WORKERS: '2'
+  GUNICORN_THREADS: '2'
+
+# 预生产密钥配置
+secrets:
+  # 基础认证
+  - SECRET_KEY  # 测试环境密钥
+  - DATABASE_URL  # 测试数据库连接
+  - REDIS_URL  # 测试Redis连接
+  
+  # 第三方服务 (测试密钥)
+  - OPENAI_API_KEY  # OpenAI测试密钥
+  - SENTRY_DSN  # 测试Sentry配置
+  
+  # Vercel预生产部署
+  - VERCEL_TOKEN  # Vercel部署令牌
+  - VERCEL_ORG_ID  # Vercel组织ID
+  - VERCEL_PROJECT_ID  # Vercel项目ID
+  
+  # 容器注册表
+  - DOCKER_REGISTRY  # 测试注册表
+  - DOCKER_USERNAME  # 注册表用户名
+  - DOCKER_PASSWORD  # 注册表密码
+  
+  # 测试工具
+  - TEST_DB_URL  # 独立测试数据库
+  - LOAD_TEST_TOKEN  # 性能测试令牌

@@ -7,6 +7,8 @@
   packages = [
     pkgs.nodejs_20
     pkgs.zulu
+    pkgs.uv
+    pkgs.python313
   ];
   # Sets environment variables in the workspace
   env = {};

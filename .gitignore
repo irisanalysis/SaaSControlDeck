@@ -151,6 +151,7 @@ test-results/
 
 # claude
 .claude
+.archive
 
 # gemini
 .gemini
