@@ -1,0 +1,703 @@
+version: '3.8'
+
+# ===========================================
+# SaaS Control Deck - 云服务器完整部署配置
+# ===========================================
+# 优化的生产环境配置，支持高可用性和自动扩展
+
+services:
+  # ===========================================
+  # 前端服务 - Next.js应用
+  # ===========================================
+  frontend-app:
+    image: ghcr.io/irisanalysis/saascontroldeck-frontend:${FRONTEND_IMAGE_TAG:-latest}
+    container_name: saascontroldeck-frontend-app
+    restart: unless-stopped
+    ports:
+      - "9000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_ENVIRONMENT=production
+      - NEXT_PUBLIC_APP_NAME=SaaS Control Deck
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - BACKEND_PRO1_URL=http://api-gateway-pro1:8000
+      - BACKEND_PRO2_URL=http://api-gateway-pro2:8100
+      - NEXT_PUBLIC_CDN_URL=${CDN_URL:-}
+      - NEXT_PUBLIC_SENTRY_DSN=${FRONTEND_SENTRY_DSN:-}
+      - NEXT_PUBLIC_ANALYTICS_ID=${ANALYTICS_ID:-}
+      - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY}
+      - NEXT_PUBLIC_GENKIT_ENV=production
+    networks:
+      - saascontrol-cloud-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - redis-cache
+    volumes:
+      - frontend-cache:/app/.next/cache
+      - frontend-logs:/var/log/app
+    labels:
+      - "com.saascontroldeck.service=frontend"
+      - "com.saascontroldeck.environment=production"
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+          cpus: '1.5'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # ===========================================
+  # 后端服务 - Pro1 微服务集群
+  # ===========================================
+  
+  # API网关 Pro1
+  api-gateway-pro1:
+    image: ghcr.io/irisanalysis/saascontroldeck-backend-pro1:${BACKEND_PRO1_IMAGE_TAG:-latest}
+    container_name: api-gateway-pro1
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - PROJECT_ID=pro1
+      - API_GATEWAY_PORT=8000
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-primary:5432/${POSTGRES_DB_PRO1}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/0
+      - SECRET_KEY=${SECRET_KEY_PRO1}
+      - MINIO_ENDPOINT=minio-storage:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - SENTRY_DSN=${BACKEND_SENTRY_DSN:-}
+      - LOG_LEVEL=INFO
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:9000}
+    networks:
+      - saascontrol-cloud-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      minio-storage:
+        condition: service_healthy
+    volumes:
+      - backend-pro1-logs:/app/logs
+    labels:
+      - "com.saascontroldeck.service=api-gateway"
+      - "com.saascontroldeck.project=pro1"
+      - "com.saascontroldeck.environment=production"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # 数据服务 Pro1
+  data-service-pro1:
+    image: ghcr.io/irisanalysis/saascontroldeck-backend-pro1:${BACKEND_PRO1_IMAGE_TAG:-latest}
+    container_name: data-service-pro1
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=production
+      - PROJECT_ID=pro1
+      - DATA_SERVICE_PORT=8001
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-primary:5432/${POSTGRES_DB_PRO1}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/0
+      - SECRET_KEY=${SECRET_KEY_PRO1}
+      - MINIO_ENDPOINT=minio-storage:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - LOG_LEVEL=INFO
+    networks:
+      - saascontrol-cloud-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      minio-storage:
+        condition: service_healthy
+    volumes:
+      - backend-pro1-logs:/app/logs
+    labels:
+      - "com.saascontroldeck.service=data-service"
+      - "com.saascontroldeck.project=pro1"
+    command: python -m uvicorn data-service.app.main:app --host 0.0.0.0 --port 8001 --workers 4
+
+  # AI服务 Pro1
+  ai-service-pro1:
+    image: ghcr.io/irisanalysis/saascontroldeck-backend-pro1:${BACKEND_PRO1_IMAGE_TAG:-latest}
+    container_name: ai-service-pro1
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      - ENVIRONMENT=production
+      - PROJECT_ID=pro1
+      - AI_SERVICE_PORT=8002
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-primary:5432/${POSTGRES_DB_PRO1}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/0
+      - SECRET_KEY=${SECRET_KEY_PRO1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - RAY_HEAD_NODE_HOST=ray-cluster
+      - RAY_HEAD_NODE_PORT=10001
+      - LOG_LEVEL=INFO
+    networks:
+      - saascontrol-cloud-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - postgres-primary
+      - redis-cache
+      - ray-cluster
+    volumes:
+      - backend-pro1-logs:/app/logs
+    labels:
+      - "com.saascontroldeck.service=ai-service"
+      - "com.saascontroldeck.project=pro1"
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '3.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+    command: python -m uvicorn ai-service.app.main:app --host 0.0.0.0 --port 8002 --workers 2
+
+  # ===========================================
+  # 后端服务 - Pro2 微服务集群
+  # ===========================================
+  
+  # API网关 Pro2
+  api-gateway-pro2:
+    image: ghcr.io/irisanalysis/saascontroldeck-backend-pro2:${BACKEND_PRO2_IMAGE_TAG:-latest}
+    container_name: api-gateway-pro2
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      - ENVIRONMENT=production
+      - PROJECT_ID=pro2
+      - API_GATEWAY_PORT=8100
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-primary:5432/${POSTGRES_DB_PRO2}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
+      - SECRET_KEY=${SECRET_KEY_PRO2}
+      - MINIO_ENDPOINT=minio-storage:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - LOG_LEVEL=INFO
+    networks:
+      - saascontrol-cloud-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      minio-storage:
+        condition: service_healthy
+    volumes:
+      - backend-pro2-logs:/app/logs
+    labels:
+      - "com.saascontroldeck.service=api-gateway"
+      - "com.saascontroldeck.project=pro2"
+
+  # 数据服务 Pro2
+  data-service-pro2:
+    image: ghcr.io/irisanalysis/saascontroldeck-backend-pro2:${BACKEND_PRO2_IMAGE_TAG:-latest}
+    container_name: data-service-pro2
+    restart: unless-stopped
+    ports:
+      - "8101:8101"
+    environment:
+      - ENVIRONMENT=production
+      - PROJECT_ID=pro2
+      - DATA_SERVICE_PORT=8101
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-primary:5432/${POSTGRES_DB_PRO2}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
+      - SECRET_KEY=${SECRET_KEY_PRO2}
+      - MINIO_ENDPOINT=minio-storage:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - LOG_LEVEL=INFO
+    networks:
+      - saascontrol-cloud-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8101/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - postgres-primary
+      - redis-cache
+      - minio-storage
+    volumes:
+      - backend-pro2-logs:/app/logs
+    command: python -m uvicorn data-service.app.main:app --host 0.0.0.0 --port 8101 --workers 4
+
+  # AI服务 Pro2
+  ai-service-pro2:
+    image: ghcr.io/irisanalysis/saascontroldeck-backend-pro2:${BACKEND_PRO2_IMAGE_TAG:-latest}
+    container_name: ai-service-pro2
+    restart: unless-stopped
+    ports:
+      - "8102:8102"
+    environment:
+      - ENVIRONMENT=production
+      - PROJECT_ID=pro2
+      - AI_SERVICE_PORT=8102
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-primary:5432/${POSTGRES_DB_PRO2}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
+      - SECRET_KEY=${SECRET_KEY_PRO2}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - RAY_HEAD_NODE_HOST=ray-cluster
+      - RAY_HEAD_NODE_PORT=10002
+      - LOG_LEVEL=INFO
+    networks:
+      - saascontrol-cloud-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8102/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - postgres-primary
+      - redis-cache
+      - ray-cluster
+    volumes:
+      - backend-pro2-logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '3.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+    command: python -m uvicorn ai-service.app.main:app --host 0.0.0.0 --port 8102 --workers 2
+
+  # ===========================================
+  # 数据存储服务
+  # ===========================================
+
+  # PostgreSQL主数据库 - 高性能配置
+  postgres-primary:
+    image: postgres:15-alpine
+    container_name: postgres-primary
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-saascontroldeck_production}
+      - POSTGRES_USER=${POSTGRES_USER:-saasuser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS="--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+      - POSTGRES_MAX_CONNECTIONS=200
+      - POSTGRES_SHARED_BUFFERS=256MB
+      - POSTGRES_EFFECTIVE_CACHE_SIZE=1GB
+      - POSTGRES_MAINTENANCE_WORK_MEM=64MB
+    volumes:
+      - postgres-primary-data:/var/lib/postgresql/data
+      - ./scripts/postgres/postgresql-cloud.conf:/etc/postgresql/postgresql.conf
+      - ./scripts/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
+      - postgres-backups:/var/lib/postgresql/backups
+    networks:
+      - saascontrol-cloud-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saasuser} -d ${POSTGRES_DB:-saascontroldeck_production}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      postgres 
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c log_destination=stderr
+      -c logging_collector=on
+      -c log_directory=/var/lib/postgresql/data/logs
+      -c log_filename=postgresql-%Y-%m-%d.log
+    labels:
+      - "com.saascontroldeck.service=database"
+      - "com.saascontroldeck.type=primary"
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '4.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+
+  # Redis缓存 - 持久化配置
+  redis-cache:
+    image: redis:7-alpine
+    container_name: redis-cache
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    command: >
+      redis-server 
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis-cache-data:/data
+      - ./config/redis/redis-production.conf:/etc/redis/redis.conf
+    networks:
+      - saascontrol-cloud-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    labels:
+      - "com.saascontroldeck.service=cache"
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # MinIO对象存储 - 企业级配置
+  minio-storage:
+    image: minio/minio:latest
+    container_name: minio-storage
+    restart: unless-stopped
+    ports:
+      - "9010:9000"   # API端口
+      - "9011:9001"   # Console端口
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+      - MINIO_BROWSER_REDIRECT_URL=${MINIO_CONSOLE_URL:-http://localhost:9011}
+      - MINIO_API_CORS_ALLOW_ORIGIN=${MINIO_CORS_ORIGINS:-*}
+    command: server /data --console-address ":9001" --address ":9000"
+    volumes:
+      - minio-storage-data:/data
+      - minio-config:/root/.minio
+    networks:
+      - saascontrol-cloud-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "com.saascontroldeck.service=storage"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # ===========================================
+  # 分布式计算服务
+  # ===========================================
+
+  # Ray集群头节点
+  ray-cluster:
+    image: rayproject/ray:2.7.0-py310
+    container_name: ray-cluster-head
+    restart: unless-stopped
+    ports:
+      - "8265:8265"   # Ray Dashboard
+      - "10001:10001" # Ray Client端口
+    environment:
+      - RAY_DISABLE_IMPORT_WARNING=1
+    command: >
+      ray start 
+      --head 
+      --dashboard-host=0.0.0.0 
+      --dashboard-port=8265 
+      --port=10001
+      --block
+    networks:
+      - saascontrol-cloud-network
+    volumes:
+      - ray-logs:/tmp/ray
+    labels:
+      - "com.saascontroldeck.service=ray-compute"
+      - "com.saascontroldeck.type=head"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # ===========================================
+  # 监控和日志服务
+  # ===========================================
+
+  # Prometheus监控
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus-monitor
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus-cloud.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules
+      - prometheus-data:/prometheus
+    networks:
+      - saascontrol-cloud-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    labels:
+      - "com.saascontroldeck.service=monitoring"
+      - "com.saascontroldeck.type=metrics"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Grafana仪表板
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_SERVER_DOMAIN=${GRAFANA_DOMAIN:-localhost}
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel,grafana-clock-panel
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/saascontrol-overview.json
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - saascontrol-cloud-network
+    depends_on:
+      - prometheus
+    labels:
+      - "com.saascontroldeck.service=monitoring"
+      - "com.saascontroldeck.type=dashboard"
+
+  # Elasticsearch日志存储
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch-logs
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+      - xpack.security.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - saascontrol-cloud-network
+    labels:
+      - "com.saascontroldeck.service=logging"
+      - "com.saascontroldeck.type=storage"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # Kibana日志分析
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: kibana-analytics
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - SERVER_NAME=${KIBANA_SERVER_NAME:-kibana.localhost}
+      - SERVER_PUBLICBASEURL=${KIBANA_PUBLIC_URL:-http://localhost:5601}
+    networks:
+      - saascontrol-cloud-network
+    depends_on:
+      - elasticsearch
+    labels:
+      - "com.saascontroldeck.service=logging"
+      - "com.saascontroldeck.type=analytics"
+
+  # ===========================================
+  # 反向代理和负载均衡
+  # ===========================================
+  
+  # Nginx负载均衡器
+  nginx-lb:
+    image: nginx:alpine
+    container_name: nginx-loadbalancer
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx-cloud.conf:/etc/nginx/nginx.conf
+      - ./nginx/sites-enabled:/etc/nginx/sites-enabled
+      - nginx-cache:/var/cache/nginx
+      - nginx-logs:/var/log/nginx
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    networks:
+      - saascontrol-cloud-network
+    depends_on:
+      - frontend-app
+      - api-gateway-pro1
+      - api-gateway-pro2
+    labels:
+      - "com.saascontroldeck.service=proxy"
+      - "com.saascontroldeck.type=loadbalancer"
+
+# ===========================================
+# 网络配置
+# ===========================================
+networks:
+  saascontrol-cloud-network:
+    driver: bridge
+    name: saascontrol-cloud-network
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.0.0/16
+    driver_opts:
+      com.docker.network.bridge.name: saascontrol-cloud-br0
+
+# ===========================================
+# 数据卷配置 - 持久化存储
+# ===========================================
+volumes:
+  # 前端数据
+  frontend-cache:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/saascontroldeck/data/frontend/cache
+  frontend-logs:
+    driver: local
+
+  # 后端日志
+  backend-pro1-logs:
+    driver: local
+  backend-pro2-logs:
+    driver: local
+
+  # 数据库存储
+  postgres-primary-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/saascontroldeck/data/postgres
+  postgres-backups:
+    driver: local
+
+  # 缓存存储
+  redis-cache-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/saascontroldeck/data/redis
+
+  # 对象存储
+  minio-storage-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/saascontroldeck/data/minio
+  minio-config:
+    driver: local
+
+  # 监控数据
+  prometheus-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/saascontroldeck/data/prometheus
+  grafana-data:
+    driver: local
+
+  # 日志存储
+  elasticsearch-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/saascontroldeck/data/elasticsearch
+
+  # 计算集群
+  ray-logs:
+    driver: local
+
+  # 代理缓存
+  nginx-cache:
+    driver: local
+  nginx-logs:
+    driver: local

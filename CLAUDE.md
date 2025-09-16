@@ -138,6 +138,64 @@ Built on Radix UI primitives with consistent styling:
 - Components use `clsx` and `tailwind-merge` for conditional styling
 - Dark mode support with class-based theming
 
+### Multi-UI Library Architecture (Technical Extension)
+
+**🔧 Current UI Libraries:**
+- **Primary**: Radix UI (Production Ready)
+  - Version: Various @radix-ui/* packages
+  - Components: 18+ components (buttons, dialogs, forms, etc.)
+  - Status: ✅ Stable, fully integrated with custom theming
+
+**🚀 Future UI Library Extensions:**
+- **Secondary**: HeroUI (Evaluation Phase)
+  - Repository: https://github.com/heroui-inc/heroui
+  - Documentation: https://www.heroui.com/docs/guide/installation
+  - Status: ⚠️ Version Conflict - Requires Tailwind CSS v4 (Current: v3.4.1)
+  - Installation: `npm install @heroui/react framer-motion`
+  - Integration Strategy: Selective component adoption for new features only
+
+**🔄 Technical Requirements for HeroUI:**
+- **Tailwind CSS Upgrade**: v3.4.1 → v4.0.0+ (Breaking Change)
+- **Framer Motion**: v11.9+ (Animation library dependency)
+- **React Version**: v18+ (Already compatible)
+- **Installation Method**: CLI recommended (`heroui init`) or manual NPM
+
+**📋 Multi-Library Strategy:**
+1. **Phase 1 (Current)**: Continue with Radix UI for existing components
+2. **Phase 2 (Future)**: Evaluate HeroUI for new feature components
+3. **Phase 3 (Long-term)**: Gradual migration assessment based on component needs
+
+**⚠️ Version Conflict Resolution:**
+```bash
+# Current blocked installation due to Tailwind CSS version:
+# npm install @heroui/react framer-motion
+# Error: peer tailwindcss@">=4.0.0" required, found 3.4.17
+
+# Potential solutions:
+# Option 1: Force install (risky)
+npm install @heroui/react framer-motion --force
+
+# Option 2: Legacy peer deps (temporary)
+npm install @heroui/react framer-motion --legacy-peer-deps
+
+# Option 3: Tailwind CSS v4 upgrade (requires full testing)
+npm install tailwindcss@latest
+```
+
+**🎯 Implementation Guidelines:**
+- **New Features**: Consider HeroUI components for modern design patterns
+- **Existing Code**: Maintain Radix UI components until migration plan
+- **Styling Consistency**: Ensure both libraries work with our CSS variables theme
+- **Performance**: Monitor bundle size impact when adding HeroUI components
+- **Documentation**: Update component documentation when mixing libraries
+
+**📝 Future Evaluation Criteria:**
+- Component feature completeness vs Radix UI
+- Bundle size and performance impact
+- Maintenance overhead of multiple UI libraries
+- Team learning curve and development velocity
+- Long-term migration feasibility within 6-day cycles
+
 ## Key Files and Patterns
 
 ### Main Application Entry Points

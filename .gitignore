@@ -156,6 +156,9 @@ test-results/
 # gemini
 .gemini
 
+# tools
+tools/
+
 # Deployment secrets and sensitive data
 .env.staging
 .env.production

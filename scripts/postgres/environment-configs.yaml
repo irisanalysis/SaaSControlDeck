@@ -1,0 +1,376 @@
+# =============================================================================
+# PostgreSQL Environment-Specific Configuration
+# SaaS Control Deck - Multi-Environment Setup
+# =============================================================================
+# YAML configuration for different environment optimizations
+# Use this file to generate environment-specific postgresql.conf files
+
+# =============================================================================
+# DEVELOPMENT ENVIRONMENT CONFIGURATION
+# =============================================================================
+development:
+  description: "Fast development with debugging capabilities"
+  server_info:
+    expected_connections: 10
+    memory_allocation: "1GB"
+    storage_type: "SSD"
+    debugging: true
+  
+  # Memory Settings (Conservative for development)
+  memory:
+    shared_buffers: "256MB"              # 25% of 1GB allocated
+    effective_cache_size: "768MB"        # 75% of 1GB allocated
+    work_mem: "16MB"                     # Small work memory for dev
+    maintenance_work_mem: "128MB"        # Moderate maintenance memory
+    wal_buffers: "8MB"                   # Conservative WAL buffer
+    temp_buffers: "16MB"                 # Small temp buffers
+  
+  # Connection Settings
+  connection:
+    max_connections: 50                  # Allow for multiple dev connections
+    superuser_reserved_connections: 3
+    idle_in_transaction_session_timeout: "30min"
+    authentication_timeout: "60s"
+  
+  # Query Planner (Development optimized)
+  planner:
+    random_page_cost: 1.1                # SSD optimized
+    seq_page_cost: 1.0
+    cpu_tuple_cost: 0.01
+    cpu_index_tuple_cost: 0.005
+    effective_io_concurrency: 4          # Moderate concurrency
+  
+  # Logging (Verbose for development)
+  logging:
+    log_min_duration_statement: "500ms"  # Log slower queries
+    log_statement: "ddl"                 # Log schema changes
+    log_connections: true                # Track connections
+    log_disconnections: true
+    log_lock_waits: true
+    log_checkpoints: true
+    log_line_prefix: "%t [%p] %q%u@%d: "
+  
+  # Autovacuum (Less aggressive for dev)
+  autovacuum:
+    autovacuum_max_workers: 2
+    autovacuum_naptime: "60s"
+    autovacuum_vacuum_scale_factor: 0.3  # Less frequent vacuum
+    autovacuum_analyze_scale_factor: 0.2 # Less frequent analyze
+  
+  # Extensions and Debugging
+  extensions:
+    shared_preload_libraries: "pg_stat_statements,auto_explain"
+    auto_explain_log_min_duration: "2s"
+    auto_explain_log_analyze: true
+    auto_explain_log_buffers: true
+
+# =============================================================================
+# STAGING ENVIRONMENT CONFIGURATION  
+# =============================================================================
+staging:
+  description: "Production-like testing environment"
+  server_info:
+    expected_connections: 25
+    memory_allocation: "2GB"
+    storage_type: "SSD"
+    debugging: false
+  
+  # Memory Settings (Moderate allocation)
+  memory:
+    shared_buffers: "512MB"              # 25% of 2GB allocated
+    effective_cache_size: "1536MB"       # 75% of 2GB allocated
+    work_mem: "24MB"                     # Increased work memory
+    maintenance_work_mem: "256MB"        # Higher maintenance memory
+    wal_buffers: "16MB"                  # Moderate WAL buffer
+    temp_buffers: "32MB"                 # Larger temp buffers
+  
+  # Connection Settings
+  connection:
+    max_connections: 75                  # Higher connection limit
+    superuser_reserved_connections: 3
+    idle_in_transaction_session_timeout: "10min"
+    authentication_timeout: "30s"
+  
+  # Query Planner (Balanced performance)
+  planner:
+    random_page_cost: 1.1
+    seq_page_cost: 1.0
+    cpu_tuple_cost: 0.008
+    cpu_index_tuple_cost: 0.004
+    effective_io_concurrency: 6          # Higher concurrency
+  
+  # Logging (Moderate logging)
+  logging:
+    log_min_duration_statement: "1s"     # Log slower queries only
+    log_statement: "ddl"                 # Log schema changes only
+    log_connections: false               # Reduce log volume
+    log_disconnections: false
+    log_lock_waits: true
+    log_checkpoints: true
+    log_line_prefix: "%t [%p] %u@%d: "
+  
+  # Autovacuum (Balanced approach)
+  autovacuum:
+    autovacuum_max_workers: 3
+    autovacuum_naptime: "30s"
+    autovacuum_vacuum_scale_factor: 0.2
+    autovacuum_analyze_scale_factor: 0.1
+  
+  # Extensions (Performance monitoring)
+  extensions:
+    shared_preload_libraries: "pg_stat_statements,auto_explain,pg_prewarm"
+    auto_explain_log_min_duration: "3s"
+    auto_explain_log_analyze: true
+    auto_explain_log_buffers: false      # Reduce log size
+
+# =============================================================================
+# PRODUCTION ENVIRONMENT CONFIGURATION
+# =============================================================================
+production:
+  description: "High-performance production environment"
+  server_info:
+    expected_connections: 100
+    memory_allocation: "4GB"
+    storage_type: "NVMe SSD"
+    debugging: false
+  
+  # Memory Settings (Aggressive optimization)
+  memory:
+    shared_buffers: "1200MB"             # 30% of 4GB (higher for production)
+    effective_cache_size: "3200MB"       # 80% of 4GB
+    work_mem: "32MB"                     # Higher work memory for complex queries
+    maintenance_work_mem: "512MB"        # High maintenance memory
+    wal_buffers: "32MB"                  # Large WAL buffer
+    temp_buffers: "64MB"                 # Large temp buffers
+    hash_mem_multiplier: 2.0             # PostgreSQL 13+ optimization
+  
+  # Connection Settings (Production optimized)
+  connection:
+    max_connections: 150                 # High but controlled limit
+    superuser_reserved_connections: 5    # More reserved connections
+    idle_in_transaction_session_timeout: "5min"  # Aggressive timeout
+    authentication_timeout: "10s"       # Quick authentication timeout
+  
+  # Query Planner (High performance)
+  planner:
+    random_page_cost: 1.1                # NVMe SSD optimized
+    seq_page_cost: 1.0
+    cpu_tuple_cost: 0.005                # Modern CPU optimization
+    cpu_index_tuple_cost: 0.003
+    effective_io_concurrency: 12         # High concurrency for NVMe
+    max_parallel_workers: 6              # Parallel query optimization
+    max_parallel_workers_per_gather: 2
+  
+  # Logging (Minimal for performance)
+  logging:
+    log_min_duration_statement: "2s"     # Only log very slow queries
+    log_statement: "none"                # Minimal statement logging
+    log_connections: false               # No connection logging
+    log_disconnections: false
+    log_lock_waits: true                 # Important for debugging
+    log_checkpoints: false               # Reduce log volume
+    log_line_prefix: "%t [%p]: "         # Minimal log prefix
+  
+  # Autovacuum (Aggressive for production)
+  autovacuum:
+    autovacuum_max_workers: 4            # More workers for large databases
+    autovacuum_naptime: "15s"            # More frequent checks
+    autovacuum_vacuum_scale_factor: 0.1  # Aggressive vacuum
+    autovacuum_analyze_scale_factor: 0.05 # Very aggressive analyze
+    autovacuum_vacuum_cost_limit: 400    # Higher cost limit
+  
+  # Extensions (Production monitoring)
+  extensions:
+    shared_preload_libraries: "pg_stat_statements,pg_prewarm"
+    auto_explain_log_min_duration: "5s"  # Only explain very slow queries
+    auto_explain_log_analyze: false      # Reduce overhead
+    auto_explain_log_buffers: false
+
+# =============================================================================
+# AI WORKLOAD SPECIFIC OPTIMIZATIONS
+# =============================================================================
+ai_workload_optimizations:
+  description: "Special optimizations for AI/ML workloads"
+  
+  # JSON and GIN index optimizations
+  json_optimization:
+    gin_pending_list_limit: "8MB"        # Larger GIN work area
+    gin_fuzzy_search_limit: 0            # No limit on fuzzy search
+  
+  # Parallel processing for AI computations
+  parallel_processing:
+    force_parallel_mode: false           # Keep off for production
+    parallel_tuple_cost: 0.1
+    parallel_setup_cost: 1000.0
+    min_parallel_table_scan_size: "8MB"
+    min_parallel_index_scan_size: "512kB"
+  
+  # AI-specific index strategies
+  indexing:
+    # GIN indexes for JSON AI data
+    ai_input_data_index: "CREATE INDEX CONCURRENTLY idx_ai_tasks_input_gin ON ai_tasks USING GIN (input_data);"
+    ai_output_data_index: "CREATE INDEX CONCURRENTLY idx_ai_tasks_output_gin ON ai_tasks USING GIN (output_data);"
+    
+    # Performance tracking indexes
+    ai_performance_index: "CREATE INDEX CONCURRENTLY idx_ai_results_performance ON ai_results(model_id, processing_time_ms, confidence_score);"
+    
+    # Time-series indexes for monitoring
+    ai_timeseries_index: "CREATE INDEX CONCURRENTLY idx_ai_tasks_timeseries ON ai_tasks(created_at DESC, task_type, status);"
+
+# =============================================================================
+# CONNECTION POOL CONFIGURATIONS
+# =============================================================================
+connection_pools:
+  development:
+    api_gateway_service:
+      min_size: 2
+      max_size: 5
+      command_timeout: 30
+      query_timeout: 60
+    
+    data_service:
+      min_size: 2  
+      max_size: 8
+      command_timeout: 45
+      query_timeout: 120
+    
+    ai_service:
+      min_size: 1
+      max_size: 4
+      command_timeout: 60
+      query_timeout: 300
+  
+  staging:
+    api_gateway_service:
+      min_size: 3
+      max_size: 10
+      command_timeout: 30
+      query_timeout: 120
+    
+    data_service:
+      min_size: 5
+      max_size: 15
+      command_timeout: 45
+      query_timeout: 180
+    
+    ai_service:
+      min_size: 2
+      max_size: 8
+      command_timeout: 60
+      query_timeout: 600
+  
+  production:
+    api_gateway_service:
+      min_size: 5
+      max_size: 20
+      command_timeout: 30
+      query_timeout: 180
+    
+    data_service:
+      min_size: 10
+      max_size: 25
+      command_timeout: 45
+      query_timeout: 300
+    
+    ai_service:
+      min_size: 5
+      max_size: 15
+      command_timeout: 120
+      query_timeout: 900
+
+# =============================================================================
+# MONITORING AND ALERTING THRESHOLDS
+# =============================================================================
+monitoring_thresholds:
+  connection_monitoring:
+    development:
+      max_connections_warning: 30
+      max_connections_critical: 45
+      connection_age_warning: 3600      # 1 hour
+      connection_age_critical: 7200     # 2 hours
+    
+    staging:
+      max_connections_warning: 50
+      max_connections_critical: 70
+      connection_age_warning: 1800      # 30 minutes
+      connection_age_critical: 3600     # 1 hour
+    
+    production:
+      max_connections_warning: 100
+      max_connections_critical: 140
+      connection_age_warning: 900       # 15 minutes
+      connection_age_critical: 1800     # 30 minutes
+  
+  performance_monitoring:
+    query_duration_warning: 1000        # 1 second
+    query_duration_critical: 5000       # 5 seconds
+    cache_hit_ratio_warning: 90          # 90%
+    cache_hit_ratio_critical: 80         # 80%
+    dead_tuple_percentage_warning: 10    # 10%
+    dead_tuple_percentage_critical: 20   # 20%
+  
+  ai_workload_monitoring:
+    task_error_rate_warning: 5           # 5%
+    task_error_rate_critical: 10         # 10%
+    avg_processing_time_warning: 30000   # 30 seconds
+    avg_processing_time_critical: 60000  # 60 seconds
+    queue_depth_warning: 100             # 100 pending tasks
+    queue_depth_critical: 500            # 500 pending tasks
+
+# =============================================================================
+# DATABASE MAINTENANCE SCHEDULES
+# =============================================================================
+maintenance_schedules:
+  development:
+    vacuum_schedule: "daily 02:00"
+    analyze_schedule: "daily 03:00"
+    backup_schedule: "daily 04:00"
+    retention_days: 7
+  
+  staging:
+    vacuum_schedule: "daily 01:00"
+    analyze_schedule: "daily 02:00"
+    backup_schedule: "every 6 hours"
+    retention_days: 30
+  
+  production:
+    vacuum_schedule: "daily 00:30"
+    analyze_schedule: "daily 01:00"  
+    backup_schedule: "every 4 hours"
+    retention_days: 90
+    
+    # Additional production maintenance
+    reindex_schedule: "weekly sunday 02:00"
+    partition_maintenance: "monthly first sunday 03:00"
+    statistics_update: "weekly 04:00"
+
+# =============================================================================
+# SECURITY CONFIGURATIONS
+# =============================================================================
+security_settings:
+  development:
+    ssl: false                           # Optional for dev
+    password_encryption: "scram-sha-256"
+    row_security: true
+    log_statement: "ddl"
+    
+  staging:
+    ssl: true                            # Required for staging
+    password_encryption: "scram-sha-256"
+    row_security: true
+    log_statement: "ddl"
+    ssl_ciphers: "HIGH:MEDIUM:+3DES:!aNULL"
+    
+  production:
+    ssl: true                            # Mandatory for production
+    password_encryption: "scram-sha-256"
+    row_security: true
+    log_statement: "none"                # Minimal logging for security
+    ssl_ciphers: "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384"
+    ssl_prefer_server_ciphers: true
+    
+    # Additional production security
+    authentication_timeout: "10s"
+    tcp_keepalives_idle: 300
+    tcp_keepalives_interval: 30
+    tcp_keepalives_count: 3
