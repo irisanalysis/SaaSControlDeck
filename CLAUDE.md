@@ -17,11 +17,18 @@ This is a full-stack AI data analysis platform with a modern monorepo structure:
 - Google Genkit for AI flows (Gemini 2.5 Flash)
 - Firebase Studio Nix environment (Port 9000)
 
-**Backend Stack:**  
+**Backend Stack:**
 - FastAPI microservices (API Gateway, Data Service, AI Service)
 - Multi-project isolation (backend-pro1: 8000-8099, backend-pro2: 8100-8199)
 - PostgreSQL, Redis, MinIO, Ray distributed computing
 - Docker containerization with Prometheus monitoring
+
+**🗄️ Production Database Architecture**:
+- **Cloud PostgreSQL**: 47.79.87.199:5432 (Deployed 2025-09-16)
+- **Three-Environment Setup**: Development/Staging/Production isolation
+- **Six Databases**: 2 per environment (pro1/pro2 microservices)
+- **External Integration**: Firebase Studio → Cloud PostgreSQL
+- **Documentation**: `docs/DATABASE_DEPLOYMENT_REPORT.md`
 
 ## Detailed Documentation
 
@@ -237,6 +244,31 @@ npm install tailwindcss@latest
 2. 检查端口配置是否适合目标环境
 3. 验证所有环境变量是否正确设置
 4. 运行 `npm run build` 确保生产构建无误
+
+### 🗄️ 数据库连接配置
+
+**Firebase Studio开发环境**:
+```bash
+# 主数据库连接
+DATABASE_URL="postgresql+asyncpg://saascontrol_dev_user:dev_pass_2024_secure@47.79.87.199:5432/saascontrol_dev_pro1"
+
+# 扩展数据库连接
+SECONDARY_DATABASE_URL="postgresql+asyncpg://saascontrol_dev_user:dev_pass_2024_secure@47.79.87.199:5432/saascontrol_dev_pro2"
+```
+
+**数据库架构**:
+- **开发环境**: saascontrol_dev_pro1/pro2 (CREATEDB权限)
+- **测试环境**: saascontrol_stage_pro1/pro2 (受限权限)
+- **生产环境**: saascontrol_prod_pro1/pro2 (严格权限)
+
+**快速验证命令**:
+```bash
+# 在云服务器上验证数据库部署
+./scripts/database/comprehensive-verification.sh
+
+# 测试开发环境连接
+PGPASSWORD="dev_pass_2024_secure" psql -h 47.79.87.199 -p 5432 -U saascontrol_dev_user -d saascontrol_dev_pro1 -c "SELECT version();"
+```
 
 ---
 
