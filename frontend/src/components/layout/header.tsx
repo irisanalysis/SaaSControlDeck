@@ -1,4 +1,6 @@
-import { Search, Bell, User, ChevronDown } from 'lucide-react';
+"use client";
+
+import { Search, Bell, User, ChevronDown, PanelLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -10,10 +12,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SidebarTrigger } from '@/components/ui/sidebar';
+import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 const Header = () => {
+  const { open, toggleSidebar } = useSidebar();
+
   const notifications = [
     {
       id: 1,
@@ -39,8 +44,28 @@ const Header = () => {
   ];
 
   return (
-    <header className="sticky top-0 z-30 flex h-20 items-center gap-4 border-b bg-gradient-to-r from-orange-400 via-pink-400 to-rose-400 px-4 shadow-lg sm:px-6">
-      <SidebarTrigger className="text-white hover:text-white hover:bg-white/20 data-[state=open]:bg-transparent transition-all duration-200" />
+    <>
+      {/* 浮动侧栏切换按钮 - 仅在侧栏隐藏时显示 */}
+      {!open && (
+        <Button
+          onClick={toggleSidebar}
+          className={cn(
+            "fixed left-4 top-1/2 z-50 -translate-y-1/2 h-12 w-12 rounded-2xl p-0",
+            "bg-gradient-to-br from-orange-500 via-pink-500 to-rose-500 text-white shadow-2xl",
+            "hover:from-orange-600 hover:via-pink-600 hover:to-rose-600",
+            "hover:scale-110 transition-all duration-300 ease-out",
+            "border border-white/20 backdrop-blur-sm",
+            "group flex items-center justify-center"
+          )}
+          title="打开侧栏"
+        >
+          <PanelLeft className="h-5 w-5 transition-transform group-hover:scale-110" />
+          <span className="sr-only">打开侧栏</span>
+        </Button>
+      )}
+
+      <header className="sticky top-0 z-30 flex h-20 items-center gap-4 border-b bg-gradient-to-r from-orange-400 via-pink-400 to-rose-400 px-4 shadow-lg sm:px-6">
+        <SidebarTrigger className="text-white hover:text-white hover:bg-white/20 data-[state=open]:bg-transparent transition-all duration-200" />
       
       {/* Welcome Message & Search */}
       <div className="flex-1 flex flex-col gap-1">
@@ -166,6 +191,7 @@ const Header = () => {
         </DropdownMenu>
       </div>
     </header>
+    </>
   );
 };
 
