@@ -21,9 +21,9 @@ import {
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
-const SIDEBAR_WIDTH = "16rem"
-const SIDEBAR_WIDTH_MOBILE = "18rem"
-const SIDEBAR_WIDTH_ICON = "3rem"
+const SIDEBAR_WIDTH = "19rem"
+const SIDEBAR_WIDTH_MOBILE = "20rem"
+const SIDEBAR_WIDTH_ICON = "4rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 type SidebarContext = {
@@ -141,7 +141,7 @@ const SidebarProvider = React.forwardRef<
               } as React.CSSProperties
             }
             className={cn(
-              "group/sidebar-wrapper flex min-h-svh w-full has-[[data-variant=inset]]:bg-sidebar",
+              "group/sidebar-wrapper relative flex min-h-svh w-full bg-[radial-gradient(circle_at_top,rgba(251,146,60,0.08),rgba(255,255,255,0))] px-2 py-4 has-[[data-variant=inset]]:bg-transparent dark:bg-[radial-gradient(circle_at_top,rgba(147,51,234,0.2),rgba(15,23,42,0))]",
               className
             )}
             ref={ref}
@@ -198,7 +198,7 @@ const Sidebar = React.forwardRef<
           <SheetContent
             data-sidebar="sidebar"
             data-mobile="true"
-            className="w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+            className="w-[--sidebar-width] border border-sidebar-border/50 bg-gradient-to-br from-white/95 via-white/80 to-white/70 p-0 text-sidebar-foreground shadow-xl backdrop-blur-2xl [&>button]:hidden dark:from-slate-950/80 dark:via-slate-950/70 dark:to-slate-950/60"
             style={
               {
                 "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -248,7 +248,7 @@ const Sidebar = React.forwardRef<
         >
           <div
             data-sidebar="sidebar"
-            className="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow"
+            className="relative flex h-full w-full flex-col overflow-hidden rounded-3xl border border-sidebar-border/40 bg-gradient-to-br from-white/92 via-white/80 to-white/65 shadow-[0_20px_45px_-20px_rgba(15,23,42,0.35)] backdrop-blur-2xl dark:from-slate-950/85 dark:via-slate-950/70 dark:to-slate-950/65 group-data-[variant=floating]:rounded-3xl group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border/50 group-data-[variant=floating]:shadow-[0_20px_45px_-15px_rgba(15,23,42,0.35)]"
           >
             {children}
           </div>

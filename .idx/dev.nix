@@ -12,6 +12,8 @@
   ];
   # Sets environment variables in the workspace
   env = {};
+  # Enable Docker service for containerization support
+  services.docker.enable = true;
   # This adds a file watcher to startup the firebase emulators. The emulators will only start if
   # a firebase.json file is written into the user's directory
   services.firebase.emulators = {

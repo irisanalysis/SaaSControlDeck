@@ -58,7 +58,9 @@ const AiHelp = () => {
   }
 
   return (
-    <>      <Button
+    <>
+      <Button
+        id="ai-help"
         className="fixed bottom-6 right-6 h-16 w-16 rounded-full shadow-2xl bg-gradient-to-br from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 hover:scale-110 transition-all duration-300 group border-2 border-white/20"
         style={{ boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 30px rgba(251, 146, 60, 0.25)' }}
         onClick={() => handleOpenChange(true)}

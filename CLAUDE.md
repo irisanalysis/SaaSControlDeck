@@ -270,6 +270,111 @@ SECONDARY_DATABASE_URL="postgresql+asyncpg://saascontrol_dev_user:dev_pass_2024_
 PGPASSWORD="dev_pass_2024_secure" psql -h 47.79.87.199 -p 5432 -U saascontrol_dev_user -d saascontrol_dev_pro1 -c "SELECT version();"
 ```
 
+## 🔗 PostgreSQL MCP Integration
+
+**Model Context Protocol (MCP) 数据库服务器配置** - 已集成 2025-09-16
+
+Claude Code现在可以通过MCP服务器直接与PostgreSQL数据库通信，提供强大的数据分析、查询和管理功能。
+
+### 可用的MCP数据库服务器
+
+**✅ 已配置并连接的数据库：**
+- `postgres-docker` - 开发环境 Pro1 数据库
+- `postgres-dev-pro2` - 开发环境 Pro2 数据库
+- `postgres-staging-pro1` - 测试环境 Pro1 数据库
+- `postgres-staging-pro2` - 测试环境 Pro2 数据库
+
+**⚠️ 生产环境数据库** (安全限制，仅在必要时使用):
+- `postgres-production-pro1` - 生产环境 Pro1 数据库 (需要特殊权限)
+- `postgres-production-pro2` - 生产环境 Pro2 数据库 (需要特殊权限)
+
+### MCP工具功能详解
+
+**📋 架构分析工具:**
+- `list_schemas()` - 列出数据库中所有模式
+- `list_objects(schema_name, object_type)` - 列出指定模式中的对象（表、视图、序列等）
+- `get_object_details(schema_name, object_name, object_type)` - 获取数据库对象的详细信息
+
+**🔍 查询执行工具:**
+- `execute_sql(sql)` - 执行SQL查询语句（支持SELECT、INSERT、UPDATE、DELETE等）
+- `explain_query(sql, analyze=False, hypothetical_indexes=[])` - 分析查询执行计划和性能
+
+**🛠️ 性能优化工具:**
+- `analyze_workload_indexes(method="dta", max_index_size_mb=10000)` - 分析工作负载并推荐索引优化
+- `analyze_query_indexes(queries, method="dta", max_index_size_mb=10000)` - 针对特定查询推荐索引
+- `get_top_queries(sort_by="resources", limit=10)` - 获取最慢或最消耗资源的查询
+
+**📊 健康监控工具:**
+- `analyze_db_health(health_type="all")` - 全面的数据库健康检查
+  - 支持的检查类型: `all`, `buffer`, `connection`, `constraint`, `index`, `replication`, `sequence`, `vacuum`
+
+### 使用场景与工具选择指南
+
+**🔍 当需要了解数据库结构时：**
+```python
+# 使用架构分析工具
+schemas = list_schemas()
+tables = list_objects("public", "table")
+table_details = get_object_details("public", "users", "table")
+```
+
+**💾 当需要执行数据操作时：**
+```python
+# 使用查询执行工具
+results = execute_sql("SELECT * FROM users WHERE active = true")
+user_count = execute_sql("SELECT COUNT(*) as total FROM users")
+```
+
+**⚡ 当需要性能优化时：**
+```python
+# 使用性能优化工具
+slow_queries = get_top_queries("total_time", 5)
+query_plan = explain_query("SELECT * FROM users WHERE email = ?", analyze=True)
+index_recommendations = analyze_query_indexes(["SELECT * FROM users WHERE email = ?"])
+```
+
+**🩺 当需要监控数据库健康时：**
+```python
+# 使用健康监控工具
+health_report = analyze_db_health("all")
+index_health = analyze_db_health("index")
+connection_status = analyze_db_health("connection")
+```
+
+**📈 当需要工作负载分析时：**
+```python
+# 使用工作负载分析工具
+workload_indexes = analyze_workload_indexes("dta")
+buffer_analysis = analyze_db_health("buffer")
+```
+
+### 最佳实践与安全注意事项
+
+**🔒 数据库访问安全:**
+- 开发和测试环境可以自由使用所有MCP工具
+- 生产环境访问受限，仅在必要时使用
+- 所有查询操作都会被记录和监控
+
+**⚡ 性能考虑:**
+- 使用 `explain_query()` 验证查询性能后再执行
+- 定期运行 `analyze_db_health()` 监控数据库状态
+- 利用 `analyze_workload_indexes()` 优化索引策略
+
+**🛡️ 错误处理:**
+- MCP工具会返回详细的错误信息
+- 权限不足时会给出明确的错误提示
+- 连接失败时会自动重试机制
+
+### 快速MCP命令参考
+
+```bash
+# 检查所有MCP服务器状态
+claude mcp list
+
+# 查看PostgreSQL MCP服务器配置
+cat ~/.claude.json | grep -A 5 "postgres-"
+```
+
 ---
 
 ## Full-Stack Development Context
