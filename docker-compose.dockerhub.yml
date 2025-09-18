@@ -1,0 +1,213 @@
+version: '3.8'
+
+# ===========================================
+# SaaS Control Deck - DockerHub简化部署配置
+# ===========================================
+# 专门用于从DockerHub拉取镜像进行生产部署
+#
+# 使用方法：
+# 1. 设置环境变量：export DOCKERHUB_USERNAME=your_username
+# 2. 运行部署：docker-compose -f docker-compose.dockerhub.yml up -d
+#
+# 参数说明：
+# - DOCKERHUB_USERNAME: 您的DockerHub用户名
+# - IMAGE_TAG: 镜像标签（默认：latest）
+# - SERVER_HOST: 服务器主机地址（默认：0.0.0.0）
+
+services:
+  # ===========================================
+  # 前端服务 - Next.js应用
+  # ===========================================
+  frontend-app:
+    image: ${DOCKERHUB_USERNAME:-irisanalysis}/saascontrol-frontend:${IMAGE_TAG:-latest}
+    container_name: saascontrol-frontend
+    restart: unless-stopped
+    ports:
+      - "9000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_ENVIRONMENT=production
+      - NEXT_PUBLIC_APP_NAME=SaaS Control Deck
+      - NEXT_PUBLIC_API_URL=http://${SERVER_HOST:-localhost}:8000
+      - BACKEND_PRO1_URL=http://backend-pro1:8000
+      - BACKEND_PRO2_URL=http://backend-pro2:8100
+      - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY}
+      - NEXT_PUBLIC_GENKIT_ENV=production
+    networks:
+      - saascontrol-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - backend-pro1
+      - backend-pro2
+      - redis-cache
+
+  # ===========================================
+  # 后端服务 - API Gateway Pro1
+  # ===========================================
+  backend-pro1:
+    image: ${DOCKERHUB_USERNAME:-irisanalysis}/saascontrol-backend:${IMAGE_TAG:-latest}
+    container_name: saascontrol-backend-pro1
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+      - "8002:8002"
+    environment:
+      - PROJECT_ID=pro1
+      - API_GATEWAY_PORT=8000
+      - DATA_SERVICE_PORT=8001
+      - AI_SERVICE_PORT=8002
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://saascontrol_dev_user:dev_pass_2024_secure@47.79.87.199:5432/saascontrol_dev_pro1}
+      - REDIS_URL=redis://:redis123@redis-cache:6379/0
+      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-32-chars-minimum}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - HOST=${SERVER_HOST:-0.0.0.0}
+    networks:
+      - saascontrol-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - redis-cache
+
+  # ===========================================
+  # 后端服务 - API Gateway Pro2
+  # ===========================================
+  backend-pro2:
+    image: ${DOCKERHUB_USERNAME:-irisanalysis}/saascontrol-backend:${IMAGE_TAG:-latest}
+    container_name: saascontrol-backend-pro2
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+      - "8101:8101"
+      - "8102:8102"
+    environment:
+      - PROJECT_ID=pro2
+      - API_GATEWAY_PORT=8100
+      - DATA_SERVICE_PORT=8101
+      - AI_SERVICE_PORT=8102
+      - DATABASE_URL=${SECONDARY_DATABASE_URL:-postgresql+asyncpg://saascontrol_dev_user:dev_pass_2024_secure@47.79.87.199:5432/saascontrol_dev_pro2}
+      - REDIS_URL=redis://:redis123@redis-cache:6379/1
+      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-32-chars-minimum}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - HOST=${SERVER_HOST:-0.0.0.0}
+    networks:
+      - saascontrol-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - redis-cache
+
+  # ===========================================
+  # Redis缓存服务
+  # ===========================================
+  redis-cache:
+    image: redis:7-alpine
+    container_name: saascontrol-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass redis123 --maxmemory 1gb --maxmemory-policy allkeys-lru
+    networks:
+      - saascontrol-network
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
+  # MinIO对象存储（可选）
+  # ===========================================
+  minio:
+    image: minio/minio:latest
+    container_name: saascontrol-minio
+    restart: unless-stopped
+    ports:
+      - "9001:9000"
+      - "9002:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minio}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minio123456}
+    command: server /data --console-address ":9001"
+    networks:
+      - saascontrol-network
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # ===========================================
+  # Nginx反向代理（可选）
+  # ===========================================
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: saascontrol-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx-logs:/var/log/nginx
+    networks:
+      - saascontrol-network
+    depends_on:
+      - frontend-app
+      - backend-pro1
+      - backend-pro2
+    profiles:
+      - nginx  # 可选服务，使用 --profile nginx 启用
+
+# ===========================================
+# 网络配置
+# ===========================================
+networks:
+  saascontrol-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ===========================================
+# 数据卷配置
+# ===========================================
+volumes:
+  redis-data:
+    driver: local
+    labels:
+      - "com.saascontroldeck.volume=redis-data"
+      - "com.saascontroldeck.environment=production"
+
+  minio-data:
+    driver: local
+    labels:
+      - "com.saascontroldeck.volume=minio-data"
+      - "com.saascontroldeck.environment=production"
+
+  nginx-logs:
+    driver: local
+    labels:
+      - "com.saascontroldeck.volume=nginx-logs"
+      - "com.saascontroldeck.environment=production"

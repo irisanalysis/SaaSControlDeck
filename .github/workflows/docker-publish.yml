@@ -1,0 +1,618 @@
+name: Build and Push Docker Images to DockerHub
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - '.github/workflows/docker-publish.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+  release:
+    types: [ published ]
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build all images'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  REGISTRY: docker.io
+  DOCKERHUB_USERNAME: irisanalysis
+  FRONTEND_IMAGE_NAME: saascontrol-frontend
+  BACKEND_IMAGE_NAME: saascontrol-backend
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend-changed: ${{ steps.changes.outputs.frontend }}
+      backend-changed: ${{ steps.changes.outputs.backend }}
+      version: ${{ steps.version.outputs.version }}
+      is-release: ${{ github.event_name == 'release' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect file changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+            backend:
+              - 'backend/**'
+
+      - name: Generate version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            VERSION="latest"
+          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            VERSION="dev"
+          else
+            VERSION="pr-${{ github.event.number }}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Generated version: ${VERSION}"
+
+  build-frontend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend-changed == 'true' || github.event.inputs.force_build == 'true' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.detect-changes.outputs.version }}
+
+      - name: Check if Next.js output mode is configured
+        run: |
+          if [ -f "frontend/next.config.js" ]; then
+            echo "Checking Next.js configuration..."
+            cat frontend/next.config.js
+          elif [ -f "frontend/next.config.mjs" ]; then
+            echo "Checking Next.js configuration..."
+            cat frontend/next.config.mjs
+          else
+            echo "Creating Next.js configuration for standalone output..."
+            cat > frontend/next.config.js << 'EOF'
+          /** @type {import('next').NextConfig} */
+          const nextConfig = {
+            output: 'standalone',
+            experimental: {
+              outputFileTracingRoot: '../'
+            }
+          }
+
+          module.exports = nextConfig
+          EOF
+          fi
+
+      - name: Build and push Frontend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./frontend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ needs.detect-changes.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-frontend-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-frontend-results.sarif'
+
+  build-backend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend-changed == 'true' || github.event.inputs.force_build == 'true' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        backend-project: [backend-pro1, backend-pro2]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.detect-changes.outputs.version }}
+
+      - name: Build and push Backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/${{ matrix.backend-project }}
+          file: ./backend/${{ matrix.backend-project }}/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}-${{ matrix.backend-project }}:${{ needs.detect-changes.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-backend-${{ matrix.backend-project }}-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-backend-${{ matrix.backend-project }}-results.sarif'
+
+  test-images:
+    needs: [detect-changes, build-frontend, build-backend]
+    if: always() && (needs.build-frontend.result == 'success' || needs.build-backend.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Test Frontend Image
+        if: needs.build-frontend.result == 'success'
+        run: |
+          echo "Testing frontend image health check..."
+          docker run -d --name frontend-test \
+            -p 9000:9000 \
+            ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ needs.detect-changes.outputs.version }}
+
+          # Wait for container to start
+          sleep 30
+
+          # Test health endpoint
+          for i in {1..10}; do
+            if curl -f http://localhost:9000/api/health 2>/dev/null; then
+              echo "Frontend health check passed!"
+              break
+            fi
+            echo "Attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+          done
+
+          docker logs frontend-test
+          docker stop frontend-test
+          docker rm frontend-test
+
+      - name: Test Backend Images
+        if: needs.build-backend.result == 'success'
+        run: |
+          # Test both backend projects
+          for project in backend-pro1 backend-pro2; do
+            echo "Testing $project image health check..."
+
+            if [ "$project" = "backend-pro1" ]; then
+              port=8000
+            else
+              port=8100
+            fi
+
+            docker run -d --name ${project}-test \
+              -p ${port}:${port} \
+              -e DATABASE_URL="postgresql+asyncpg://test:test@localhost:5432/test" \
+              -e REDIS_URL="redis://localhost:6379/0" \
+              -e SECRET_KEY="test-secret-key-32-chars-minimum" \
+              ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}-${project}:${{ needs.detect-changes.outputs.version }}
+
+            # Wait for container to start
+            sleep 30
+
+            # Test health endpoint
+            for i in {1..10}; do
+              if curl -f http://localhost:${port}/health 2>/dev/null; then
+                echo "$project health check passed!"
+                break
+              fi
+              echo "Attempt $i failed, retrying in 5 seconds..."
+              sleep 5
+            done
+
+            docker logs ${project}-test
+            docker stop ${project}-test
+            docker rm ${project}-test
+          done
+
+  generate-deployment-configs:
+    needs: [detect-changes, build-frontend, build-backend]
+    if: always() && (needs.build-frontend.result == 'success' || needs.build-backend.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate Docker Compose for deployment
+        run: |
+          mkdir -p deployment-configs
+
+          cat > deployment-configs/docker-compose.prod.yml << 'EOF'
+          version: '3.8'
+
+          services:
+            frontend:
+              image: ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ needs.detect-changes.outputs.version }}
+              ports:
+                - "9000:9000"
+              environment:
+                - NODE_ENV=production
+                - NEXT_TELEMETRY_DISABLED=1
+              restart: unless-stopped
+              healthcheck:
+                test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9000/api/health"]
+                interval: 30s
+                timeout: 30s
+                retries: 3
+                start_period: 40s
+
+            backend-pro1:
+              image: ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}-backend-pro1:${{ needs.detect-changes.outputs.version }}
+              ports:
+                - "8000:8000"
+                - "8001:8001"
+                - "8002:8002"
+              environment:
+                - PROJECT_ID=pro1
+                - API_GATEWAY_PORT=8000
+                - DATABASE_URL=${DATABASE_URL_PRO1}
+                - REDIS_URL=${REDIS_URL_PRO1}
+                - SECRET_KEY=${SECRET_KEY_PRO1}
+                - OPENAI_API_KEY=${OPENAI_API_KEY}
+              restart: unless-stopped
+              depends_on:
+                - postgres-pro1
+                - redis-pro1
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+                interval: 30s
+                timeout: 30s
+                retries: 3
+                start_period: 40s
+
+            backend-pro2:
+              image: ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}-backend-pro2:${{ needs.detect-changes.outputs.version }}
+              ports:
+                - "8100:8100"
+                - "8101:8101"
+                - "8102:8102"
+              environment:
+                - PROJECT_ID=pro2
+                - API_GATEWAY_PORT=8100
+                - DATABASE_URL=${DATABASE_URL_PRO2}
+                - REDIS_URL=${REDIS_URL_PRO2}
+                - SECRET_KEY=${SECRET_KEY_PRO2}
+                - OPENAI_API_KEY=${OPENAI_API_KEY}
+              restart: unless-stopped
+              depends_on:
+                - postgres-pro2
+                - redis-pro2
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+                interval: 30s
+                timeout: 30s
+                retries: 3
+                start_period: 40s
+
+            postgres-pro1:
+              image: postgres:15-alpine
+              environment:
+                - POSTGRES_DB=ai_platform_pro1
+                - POSTGRES_USER=${POSTGRES_USER_PRO1}
+                - POSTGRES_PASSWORD=${POSTGRES_PASSWORD_PRO1}
+              volumes:
+                - postgres_data_pro1:/var/lib/postgresql/data
+              ports:
+                - "5432:5432"
+              restart: unless-stopped
+
+            postgres-pro2:
+              image: postgres:15-alpine
+              environment:
+                - POSTGRES_DB=ai_platform_pro2
+                - POSTGRES_USER=${POSTGRES_USER_PRO2}
+                - POSTGRES_PASSWORD=${POSTGRES_PASSWORD_PRO2}
+              volumes:
+                - postgres_data_pro2:/var/lib/postgresql/data
+              ports:
+                - "5433:5432"
+              restart: unless-stopped
+
+            redis-pro1:
+              image: redis:7-alpine
+              command: redis-server --requirepass ${REDIS_PASSWORD_PRO1}
+              ports:
+                - "6379:6379"
+              volumes:
+                - redis_data_pro1:/data
+              restart: unless-stopped
+
+            redis-pro2:
+              image: redis:7-alpine
+              command: redis-server --requirepass ${REDIS_PASSWORD_PRO2}
+              ports:
+                - "6380:6379"
+              volumes:
+                - redis_data_pro2:/data
+              restart: unless-stopped
+
+          volumes:
+            postgres_data_pro1:
+            postgres_data_pro2:
+            redis_data_pro1:
+            redis_data_pro2:
+          EOF
+
+      - name: Generate Kubernetes deployment manifests
+        run: |
+          cat > deployment-configs/k8s-deployment.yml << 'EOF'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: saascontrol-frontend
+            labels:
+              app: saascontrol-frontend
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: saascontrol-frontend
+            template:
+              metadata:
+                labels:
+                  app: saascontrol-frontend
+              spec:
+                containers:
+                - name: frontend
+                  image: ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ needs.detect-changes.outputs.version }}
+                  ports:
+                  - containerPort: 9000
+                  env:
+                  - name: NODE_ENV
+                    value: "production"
+                  - name: NEXT_TELEMETRY_DISABLED
+                    value: "1"
+                  resources:
+                    requests:
+                      memory: "256Mi"
+                      cpu: "250m"
+                    limits:
+                      memory: "512Mi"
+                      cpu: "500m"
+                  livenessProbe:
+                    httpGet:
+                      path: /api/health
+                      port: 9000
+                    initialDelaySeconds: 30
+                    periodSeconds: 30
+                  readinessProbe:
+                    httpGet:
+                      path: /api/health
+                      port: 9000
+                    initialDelaySeconds: 5
+                    periodSeconds: 10
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: saascontrol-frontend-service
+          spec:
+            selector:
+              app: saascontrol-frontend
+            ports:
+            - port: 80
+              targetPort: 9000
+            type: LoadBalancer
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: saascontrol-backend-pro1
+            labels:
+              app: saascontrol-backend-pro1
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: saascontrol-backend-pro1
+            template:
+              metadata:
+                labels:
+                  app: saascontrol-backend-pro1
+              spec:
+                containers:
+                - name: backend
+                  image: ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}-backend-pro1:${{ needs.detect-changes.outputs.version }}
+                  ports:
+                  - containerPort: 8000
+                  env:
+                  - name: PROJECT_ID
+                    value: "pro1"
+                  - name: API_GATEWAY_PORT
+                    value: "8000"
+                  - name: DATABASE_URL
+                    valueFrom:
+                      secretKeyRef:
+                        name: saascontrol-secrets
+                        key: database-url-pro1
+                  - name: REDIS_URL
+                    valueFrom:
+                      secretKeyRef:
+                        name: saascontrol-secrets
+                        key: redis-url-pro1
+                  - name: SECRET_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        name: saascontrol-secrets
+                        key: secret-key-pro1
+                  - name: OPENAI_API_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        name: saascontrol-secrets
+                        key: openai-api-key
+                  resources:
+                    requests:
+                      memory: "512Mi"
+                      cpu: "500m"
+                    limits:
+                      memory: "1Gi"
+                      cpu: "1000m"
+                  livenessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8000
+                    initialDelaySeconds: 30
+                    periodSeconds: 30
+                  readinessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8000
+                    initialDelaySeconds: 10
+                    periodSeconds: 10
+          EOF
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-configs-${{ needs.detect-changes.outputs.version }}
+          path: deployment-configs/
+
+  update-deployment-status:
+    needs: [detect-changes, build-frontend, build-backend, test-images]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update deployment status
+        run: |
+          echo "## Docker Image Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status | Image Tag |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|-----------|" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.build-frontend.result }}" == "success" ]; then
+            echo "| Frontend | ✅ Success | \`${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ needs.detect-changes.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.detect-changes.outputs.frontend-changed }}" == "true" ]; then
+            echo "| Frontend | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Frontend | ⏭️ Skipped | No changes detected |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.build-backend.result }}" == "success" ]; then
+            echo "| Backend Pro1 | ✅ Success | \`${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}-backend-pro1:${{ needs.detect-changes.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Backend Pro2 | ✅ Success | \`${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}-backend-pro2:${{ needs.detect-changes.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.detect-changes.outputs.backend-changed }}" == "true" ]; then
+            echo "| Backend Pro1 | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+            echo "| Backend Pro2 | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Backend Pro1 | ⏭️ Skipped | No changes detected |" >> $GITHUB_STEP_SUMMARY
+            echo "| Backend Pro2 | ⏭️ Skipped | No changes detected |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Quick Deployment Commands" >> $GITHUB_STEP_SUMMARY
+          echo "```bash" >> $GITHUB_STEP_SUMMARY
+          echo "# Pull and run frontend" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d -p 9000:9000 ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Pull and run backend pro1" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}-backend-pro1:${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d -p 8000:8000 ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE_NAME }}-backend-pro1:${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "```" >> $GITHUB_STEP_SUMMARY
+
+  notify-deployment:
+    needs: [detect-changes, build-frontend, build-backend, test-images]
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send deployment notification
+        run: |
+          echo "🚀 SaaS Control Deck Docker images have been built and pushed to DockerHub!"
+          echo "Version: ${{ needs.detect-changes.outputs.version }}"
+          echo "Frontend: ${{ needs.build-frontend.result }}"
+          echo "Backend: ${{ needs.build-backend.result }}"
+          echo "Images are ready for deployment."

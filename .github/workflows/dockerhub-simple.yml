@@ -1,0 +1,243 @@
+name: Build and Push to DockerHub (irisanalysis)
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - '.github/workflows/dockerhub-simple.yml'
+  workflow_dispatch:
+
+env:
+  DOCKERHUB_USERNAME: irisanalysis
+  FRONTEND_IMAGE: irisanalysis/saascontrol-frontend
+  BACKEND_IMAGE: irisanalysis/saascontrol-backend
+
+jobs:
+  # ===========================================
+  # 检测文件变更
+  # ===========================================
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend-changed: ${{ steps.changes.outputs.frontend }}
+      backend-changed: ${{ steps.changes.outputs.backend }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+            backend:
+              - 'backend/**'
+
+      - name: Generate tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "tag=dev" >> $GITHUB_OUTPUT
+          else
+            echo "tag=test" >> $GITHUB_OUTPUT
+          fi
+
+  # ===========================================
+  # 构建前端镜像
+  # ===========================================
+  build-frontend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend-changed == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Prepare Next.js for Docker
+        run: |
+          if [ -f "frontend/next.config.js" ]; then
+            echo "Next.js config exists, checking output mode..."
+            if ! grep -q "output.*standalone" frontend/next.config.js; then
+              echo "Adding standalone output mode to next.config.js"
+              # Backup original
+              cp frontend/next.config.js frontend/next.config.js.backup
+              # Add standalone output
+              sed -i '/const nextConfig = {/a\  output: "standalone",' frontend/next.config.js
+            fi
+          fi
+
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: frontend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ needs.detect-changes.outputs.tag }}
+            ${{ env.FRONTEND_IMAGE }}:build-${{ github.run_number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Frontend Image
+        run: |
+          docker run --rm -d --name test-frontend -p 3000:3000 ${{ env.FRONTEND_IMAGE }}:${{ needs.detect-changes.outputs.tag }}
+          sleep 30
+          if curl -f http://localhost:3000/api/health; then
+            echo "✅ Frontend health check passed"
+          else
+            echo "❌ Frontend health check failed"
+            docker logs test-frontend
+            exit 1
+          fi
+          docker stop test-frontend
+
+  # ===========================================
+  # 构建后端镜像
+  # ===========================================
+  build-backend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend-changed == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: backend/backend-pro1
+          file: backend/backend-pro1/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ needs.detect-changes.outputs.tag }}
+            ${{ env.BACKEND_IMAGE }}:build-${{ github.run_number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Backend Image
+        run: |
+          docker run --rm -d --name test-backend -p 8000:8000 \
+            -e PROJECT_ID=pro1 \
+            -e DATABASE_URL=sqlite:///tmp/test.db \
+            -e REDIS_URL=redis://localhost:6379 \
+            -e SECRET_KEY=test-secret-key-32-chars \
+            ${{ env.BACKEND_IMAGE }}:${{ needs.detect-changes.outputs.tag }}
+          sleep 30
+          if curl -f http://localhost:8000/health; then
+            echo "✅ Backend health check passed"
+          else
+            echo "❌ Backend health check failed"
+            docker logs test-backend
+            exit 1
+          fi
+          docker stop test-backend
+
+  # ===========================================
+  # 安全扫描
+  # ===========================================
+  security-scan:
+    needs: [detect-changes, build-frontend, build-backend]
+    if: always() && (needs.build-frontend.result == 'success' || needs.build-backend.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Trivy vulnerability scanner - Frontend
+        if: needs.build-frontend.result == 'success'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.FRONTEND_IMAGE }}:${{ needs.detect-changes.outputs.tag }}
+          format: 'sarif'
+          output: 'trivy-frontend-results.sarif'
+
+      - name: Run Trivy vulnerability scanner - Backend
+        if: needs.build-backend.result == 'success'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.BACKEND_IMAGE }}:${{ needs.detect-changes.outputs.tag }}
+          format: 'sarif'
+          output: 'trivy-backend-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: '.'
+
+  # ===========================================
+  # 部署总结
+  # ===========================================
+  deployment-summary:
+    needs: [detect-changes, build-frontend, build-backend, security-scan]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Deployment Summary
+        run: |
+          echo "# 🐳 DockerHub 部署总结" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 构建结果" >> $GITHUB_STEP_SUMMARY
+          echo "| 组件 | 状态 | 镜像 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|------|" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.build-frontend.result }}" == "success" ]]; then
+            echo "| 前端 | ✅ 成功 | \`${{ env.FRONTEND_IMAGE }}:${{ needs.detect-changes.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.detect-changes.outputs.frontend-changed }}" == "true" ]]; then
+            echo "| 前端 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 前端 | ⏭️ 跳过 | 无变更 |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [[ "${{ needs.build-backend.result }}" == "success" ]]; then
+            echo "| 后端 | ✅ 成功 | \`${{ env.BACKEND_IMAGE }}:${{ needs.detect-changes.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.detect-changes.outputs.backend-changed }}" == "true" ]]; then
+            echo "| 后端 | ❌ 失败 | - |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 后端 | ⏭️ 跳过 | 无变更 |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 部署命令" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "# 使用我们的一键部署脚本" >> $GITHUB_STEP_SUMMARY
+          echo "./deploy-from-dockerhub.sh -u irisanalysis -t ${{ needs.detect-changes.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# 或者手动部署" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.build-frontend.result }}" == "success" ]]; then
+            echo "docker pull ${{ env.FRONTEND_IMAGE }}:${{ needs.detect-changes.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [[ "${{ needs.build-backend.result }}" == "success" ]]; then
+            echo "docker pull ${{ env.BACKEND_IMAGE }}:${{ needs.detect-changes.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo '```' >> $GITHUB_STEP_SUMMARY
