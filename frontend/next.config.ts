@@ -1,8 +1,8 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  // Remove standalone output for Vercel deployment
-  // output: 'standalone',  // Commented out for Vercel compatibility
+  // Enable standalone output for Docker builds, disable for Vercel
+  output: process.env.DOCKER_BUILD === 'true' ? 'standalone' : undefined,
   
   // Server external packages for Server Components optimization
   serverExternalPackages: ['@genkit-ai/googleai'],
