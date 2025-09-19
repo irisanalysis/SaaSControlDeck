@@ -1,4 +1,4 @@
-name: DockerHub Build (Optimized)
+name: DockerHub Build (Optimized) - Fixed Billing
 
 on:
   push:
