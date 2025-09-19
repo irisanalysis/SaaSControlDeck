@@ -1,7 +1,9 @@
-name: DockerHub Build (Simplified)
+name: DockerHub Build & Push
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
@@ -9,6 +11,7 @@ env:
   DOCKERHUB_USERNAME: irisanalysis
   FRONTEND_IMAGE: irisanalysis/saascontrol-frontend
   BACKEND_IMAGE: irisanalysis/saascontrol-backend
+  REGISTRY: docker.io
 
 jobs:
   build-frontend:
@@ -26,45 +29,38 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Prepare Next.js for Docker build
         run: |
-          # Check if next.config.ts exists and update it for Docker
-          if [ -f "frontend/next.config.ts" ]; then
-            echo "Updating Next.js config for Docker build..."
-            # Create a temporary config with standalone output
-            cat > frontend/next.config.docker.ts << 'EOF'
-          import type {NextConfig} from 'next';
-
-          const nextConfig: NextConfig = {
-            output: 'standalone',
-            eslint: {
-              ignoreDuringBuilds: true,
-            },
-            typescript: {
-              ignoreBuildErrors: true,
-            },
-            experimental: {
-              outputFileTracingRoot: undefined,
-            },
-          };
-
-          export default nextConfig;
-          EOF
-            # Backup original and use Docker version
-            cp frontend/next.config.ts frontend/next.config.ts.backup
-            cp frontend/next.config.docker.ts frontend/next.config.ts
-          fi
+          cd frontend
+          # Install dependencies for better caching
+          npm ci
+          # Set Docker build environment variable
+          echo "DOCKER_BUILD=true" >> $GITHUB_ENV
+          echo "Next.js configured for Docker standalone build"
 
       - name: Build and push Frontend
         uses: docker/build-push-action@v5
         with:
           context: .
           file: frontend/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.FRONTEND_IMAGE }}:latest
             ${{ env.FRONTEND_IMAGE }}:build-${{ github.run_number }}
+            ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            DOCKER_BUILD=true
+            BUILDKIT_INLINE_CACHE=1
 
   build-backend:
     runs-on: ubuntu-latest
@@ -86,14 +82,44 @@ jobs:
         with:
           context: backend/backend-pro1
           file: backend/backend-pro1/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.BACKEND_IMAGE }}:latest
             ${{ env.BACKEND_IMAGE }}:build-${{ github.run_number }}
+            ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+  verify-images:
+    needs: [build-frontend, build-backend]
+    runs-on: ubuntu-latest
+    if: always() && (needs.build-frontend.result == 'success' || needs.build-backend.result == 'success')
+    steps:
+      - name: Verify pushed images
+        run: |
+          echo "Verifying pushed Docker images..."
+
+          # Check frontend image
+          if [[ "${{ needs.build-frontend.result }}" == "success" ]]; then
+            echo "Checking frontend image: ${{ env.FRONTEND_IMAGE }}:latest"
+            docker pull ${{ env.FRONTEND_IMAGE }}:latest
+            docker run --rm ${{ env.FRONTEND_IMAGE }}:latest node --version
+          fi
+
+          # Check backend image
+          if [[ "${{ needs.build-backend.result }}" == "success" ]]; then
+            echo "Checking backend image: ${{ env.BACKEND_IMAGE }}:latest"
+            docker pull ${{ env.BACKEND_IMAGE }}:latest
+            docker run --rm ${{ env.BACKEND_IMAGE }}:latest python --version
+          fi
+
+          echo "✅ Image verification completed"
 
   summary:
-    needs: [build-frontend, build-backend]
+    needs: [build-frontend, build-backend, verify-images]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -101,19 +127,27 @@ jobs:
         run: |
           echo "# 🐳 DockerHub Build Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Component | Status | Image |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status | Image | Verified |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|-------|----------|" >> $GITHUB_STEP_SUMMARY
 
           if [[ "${{ needs.build-frontend.result }}" == "success" ]]; then
-            echo "| Frontend | ✅ Success | \`${{ env.FRONTEND_IMAGE }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+            VERIFY_STATUS="✅"
+            if [[ "${{ needs.verify-images.result }}" != "success" ]]; then
+              VERIFY_STATUS="⚠️"
+            fi
+            echo "| Frontend | ✅ Success | \`${{ env.FRONTEND_IMAGE }}:latest\` | $VERIFY_STATUS |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| Frontend | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+            echo "| Frontend | ❌ Failed | - | ❌ |" >> $GITHUB_STEP_SUMMARY
           fi
 
           if [[ "${{ needs.build-backend.result }}" == "success" ]]; then
-            echo "| Backend | ✅ Success | \`${{ env.BACKEND_IMAGE }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+            VERIFY_STATUS="✅"
+            if [[ "${{ needs.verify-images.result }}" != "success" ]]; then
+              VERIFY_STATUS="⚠️"
+            fi
+            echo "| Backend | ✅ Success | \`${{ env.BACKEND_IMAGE }}:latest\` | $VERIFY_STATUS |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| Backend | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+            echo "| Backend | ❌ Failed | - | ❌ |" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -121,3 +155,8 @@ jobs:
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "./deploy-from-dockerhub.sh -u irisanalysis -t latest" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 Available Images" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: [irisanalysis/saascontrol-frontend](https://hub.docker.com/r/irisanalysis/saascontrol-frontend)" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend: [irisanalysis/saascontrol-backend](https://hub.docker.com/r/irisanalysis/saascontrol-backend)" >> $GITHUB_STEP_SUMMARY

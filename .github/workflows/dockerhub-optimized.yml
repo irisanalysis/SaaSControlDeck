@@ -1,0 +1,326 @@
+name: DockerHub Build (Optimized)
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - '.github/workflows/dockerhub-optimized.yml'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build all images'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  REGISTRY: docker.io
+  DOCKERHUB_USERNAME: irisanalysis
+  FRONTEND_IMAGE: irisanalysis/saascontrol-frontend
+  BACKEND_IMAGE: irisanalysis/saascontrol-backend
+
+jobs:
+  # ===========================================
+  # 检测变更并生成标签
+  # ===========================================
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend-changed: ${{ steps.changes.outputs.frontend }}
+      backend-changed: ${{ steps.changes.outputs.backend }}
+      image-tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+            backend:
+              - 'backend/**'
+
+      - name: Generate image tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "tag=dev" >> $GITHUB_OUTPUT
+          else
+            echo "tag=pr-${{ github.event.number }}" >> $GITHUB_OUTPUT
+          fi
+
+  # ===========================================
+  # 构建前端镜像
+  # ===========================================
+  build-frontend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend-changed == 'true' || github.event.inputs.force_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.FRONTEND_IMAGE }}
+          tags: |
+            type=raw,value=${{ needs.detect-changes.outputs.image-tag }}
+            type=raw,value=build-${{ github.run_number }}
+
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: frontend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Test Frontend Image
+        run: |
+          echo "Testing frontend image health..."
+          docker run --rm -d --name test-frontend -p 13000:3000 \
+            ${{ env.FRONTEND_IMAGE }}:${{ needs.detect-changes.outputs.image-tag }}
+
+          # Wait for container to be ready
+          sleep 45
+
+          # Test health endpoint
+          for i in {1..10}; do
+            if curl -f -s http://localhost:13000/api/health > /dev/null; then
+              echo "✅ Frontend health check passed"
+              docker stop test-frontend
+              exit 0
+            fi
+            echo "Waiting for frontend to be ready... ($i/10)"
+            sleep 5
+          done
+
+          echo "❌ Frontend health check failed"
+          docker logs test-frontend
+          docker stop test-frontend
+          exit 1
+
+  # ===========================================
+  # 构建后端镜像
+  # ===========================================
+  build-backend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend-changed == 'true' || github.event.inputs.force_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.BACKEND_IMAGE }}
+          tags: |
+            type=raw,value=${{ needs.detect-changes.outputs.image-tag }}
+            type=raw,value=build-${{ github.run_number }}
+
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: backend/backend-pro1
+          file: backend/backend-pro1/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Test Backend Image
+        run: |
+          echo "Testing backend image health..."
+          docker run --rm -d --name test-backend -p 18000:8000 \
+            -e PROJECT_ID=pro1 \
+            -e DATABASE_URL=sqlite:///tmp/test.db \
+            -e REDIS_URL=redis://localhost:6379/0 \
+            -e SECRET_KEY=test-secret-key-for-ci-32-chars-min \
+            ${{ env.BACKEND_IMAGE }}:${{ needs.detect-changes.outputs.image-tag }}
+
+          # Wait for container to be ready
+          sleep 45
+
+          # Test health endpoint
+          for i in {1..10}; do
+            if curl -f -s http://localhost:18000/health > /dev/null; then
+              echo "✅ Backend health check passed"
+              docker stop test-backend
+              exit 0
+            fi
+            echo "Waiting for backend to be ready... ($i/10)"
+            sleep 5
+          done
+
+          echo "❌ Backend health check failed"
+          docker logs test-backend
+          docker stop test-backend
+          exit 1
+
+  # ===========================================
+  # 安全扫描
+  # ===========================================
+  security-scan:
+    needs: [detect-changes, build-frontend, build-backend]
+    if: always() && (needs.build-frontend.result == 'success' || needs.build-backend.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Trivy vulnerability scanner - Frontend
+        if: needs.build-frontend.result == 'success'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.FRONTEND_IMAGE }}:${{ needs.detect-changes.outputs.image-tag }}
+          format: 'sarif'
+          output: 'trivy-frontend.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Run Trivy vulnerability scanner - Backend
+        if: needs.build-backend.result == 'success'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.BACKEND_IMAGE }}:${{ needs.detect-changes.outputs.image-tag }}
+          format: 'sarif'
+          output: 'trivy-backend.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: '.'
+
+  # ===========================================
+  # 部署总结
+  # ===========================================
+  deployment-summary:
+    needs: [detect-changes, build-frontend, build-backend, security-scan]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate deployment summary
+        run: |
+          echo "# 🐳 DockerHub 构建报告" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**构建时间**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Git SHA**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**分支**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**镜像标签**: \`${{ needs.detect-changes.outputs.image-tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "## 📦 构建结果" >> $GITHUB_STEP_SUMMARY
+          echo "| 组件 | 状态 | 镜像 | 大小 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|------|------|" >> $GITHUB_STEP_SUMMARY
+
+          # Frontend results
+          if [[ "${{ needs.build-frontend.result }}" == "success" ]]; then
+            echo "| 前端 | ✅ 成功 | \`${{ env.FRONTEND_IMAGE }}:${{ needs.detect-changes.outputs.image-tag }}\` | 查看DockerHub |" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.detect-changes.outputs.frontend-changed }}" == "true" || "${{ github.event.inputs.force_build }}" == "true" ]]; then
+            echo "| 前端 | ❌ 失败 | - | - |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 前端 | ⏭️ 跳过 | 无变更 | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Backend results
+          if [[ "${{ needs.build-backend.result }}" == "success" ]]; then
+            echo "| 后端 | ✅ 成功 | \`${{ env.BACKEND_IMAGE }}:${{ needs.detect-changes.outputs.image-tag }}\` | 查看DockerHub |" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.detect-changes.outputs.backend-changed }}" == "true" || "${{ github.event.inputs.force_build }}" == "true" ]]; then
+            echo "| 后端 | ❌ 失败 | - | - |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 后端 | ⏭️ 跳过 | 无变更 | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 部署命令" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "# 一键部署脚本" >> $GITHUB_STEP_SUMMARY
+          echo "./deploy-from-dockerhub.sh -u irisanalysis -t ${{ needs.detect-changes.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# 手动部署" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.build-frontend.result }}" == "success" ]]; then
+            echo "docker pull ${{ env.FRONTEND_IMAGE }}:${{ needs.detect-changes.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [[ "${{ needs.build-backend.result }}" == "success" ]]; then
+            echo "docker pull ${{ env.BACKEND_IMAGE }}:${{ needs.detect-changes.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 验证命令" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "# 验证镜像存在" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.build-frontend.result }}" == "success" ]]; then
+            echo "docker manifest inspect ${{ env.FRONTEND_IMAGE }}:${{ needs.detect-changes.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [[ "${{ needs.build-backend.result }}" == "success" ]]; then
+            echo "docker manifest inspect ${{ env.BACKEND_IMAGE }}:${{ needs.detect-changes.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const summary = `
+            ## 🐳 DockerHub 构建完成
+
+            **前端构建**: ${{ needs.build-frontend.result == 'success' && '✅ 成功' || needs.detect-changes.outputs.frontend-changed == 'true' && '❌ 失败' || '⏭️ 跳过' }}
+            **后端构建**: ${{ needs.build-backend.result == 'success' && '✅ 成功' || needs.detect-changes.outputs.backend-changed == 'true' && '❌ 失败' || '⏭️ 跳过' }}
+
+            镜像标签: \`${{ needs.detect-changes.outputs.image-tag }}\`
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
