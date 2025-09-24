@@ -3,7 +3,7 @@ import type {NextConfig} from 'next';
 const nextConfig: NextConfig = {
   // Enable standalone output for Docker builds, disable for Vercel
   output: process.env.DOCKER_BUILD === 'true' ? 'standalone' : undefined,
-  
+
   // Server external packages for Server Components optimization
   serverExternalPackages: ['@genkit-ai/googleai'],
 
@@ -63,6 +63,11 @@ const nextConfig: NextConfig = {
   // Rewrites for API proxying
   async rewrites() {
     return [
+      // ❌ DISABLED: Authentication uses Next.js API Routes instead of direct proxy
+      // {
+      //   source: '/api/auth/:path*',
+      //   destination: `${process.env.UNIFIED_BACKEND_URL || 'http://localhost:8000'}/auth/:path*`,
+      // },
       {
         source: '/api/pro1/:path*',
         destination: `${process.env.BACKEND_PRO1_URL || 'http://localhost:8000'}/:path*`,
@@ -71,6 +76,11 @@ const nextConfig: NextConfig = {
         source: '/api/pro2/:path*',
         destination: `${process.env.BACKEND_PRO2_URL || 'http://localhost:8100'}/:path*`,
       },
+      // ✅ DISABLED: Data Service uses Next.js API Routes instead of rewrite proxy
+      // {
+      //   source: '/api/data/:path*',
+      //   destination: `${process.env.DATA_SERVICE_URL || 'http://localhost:8001'}/:path*`,
+      // },
     ];
   },
 
@@ -79,40 +89,44 @@ const nextConfig: NextConfig = {
     // Type checking is handled by separate CI step in production
     ignoreBuildErrors: process.env.NODE_ENV === 'production' || process.env.VERCEL === '1',
   },
-  
-  // Experimental features for faster builds - disabled for stability
-  // experimental: {
-  //   optimizeCss: true,
-  //   forceSwcTransforms: true,
-  // },
-  
+
+  // Experimental features for faster builds and optimization
+  experimental: {
+    optimizeCss: true,
+    turbo: {
+      rules: {
+        '*.svg': ['@svgr/webpack']
+      }
+    }
+  },
+
   // Webpack optimization for Vercel
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
     const path = require('path');
     const fs = require('fs');
-    
+
     // Robust path resolution for both monorepo and standalone scenarios
     const srcPath = (() => {
       const cwd = process.cwd();
-      
+
       // Strategy 1: Check if we have src directory in current working directory
       const cwdSrc = path.join(cwd, 'src');
       if (fs.existsSync(cwdSrc)) {
         return cwdSrc;
       }
-      
+
       // Strategy 2: Check if we're in a subdirectory and need to go up
       const parentSrc = path.resolve(cwd, '../src');
       if (fs.existsSync(parentSrc)) {
         return parentSrc;
       }
-      
+
       // Strategy 3: Check for frontend/src pattern
       const frontendSrc = path.join(cwd, 'frontend/src');
       if (fs.existsSync(frontendSrc)) {
         return frontendSrc;
       }
-      
+
       // Strategy 4: Check if we're already in frontend and need to find src
       if (cwd.includes('frontend')) {
         const srcInFrontend = path.join(cwd, 'src');
@@ -120,28 +134,28 @@ const nextConfig: NextConfig = {
           return srcInFrontend;
         }
       }
-      
+
       // Fallback: assume current directory structure
       return path.resolve(cwd, 'src');
     })();
-    
+
     // Ensure all critical paths exist
     const requiredPaths = {
       components: path.join(srcPath, 'components'),
-      lib: path.join(srcPath, 'lib'), 
+      lib: path.join(srcPath, 'lib'),
       hooks: path.join(srcPath, 'hooks'),
       ai: path.join(srcPath, 'ai')
     };
-    
+
     // Validate path structure
     const pathsExist = Object.entries(requiredPaths).map(([key, dir]) => {
       const exists = fs.existsSync(dir);
       return { key, dir, exists };
     });
-    
+
     // Debug information for troubleshooting
     const isDebugMode = process.env.NODE_ENV !== 'production' || process.env.DEBUG_MODULE_RESOLUTION || process.env.VERCEL;
-    
+
     if (isDebugMode) {
       console.log('\n🔧 NEXT.JS WEBPACK MODULE RESOLUTION DEBUG');
       console.log('Environment:', {
@@ -150,21 +164,21 @@ const nextConfig: NextConfig = {
         cwd: process.cwd(),
         srcPath
       });
-      
+
       console.log('Path validation:');
       pathsExist.forEach(({ key, dir, exists }) => {
         console.log(`  📁 ${key}: ${exists ? '✅' : '❌'} ${dir}`);
       });
-      
+
       // Test critical component imports
       const criticalComponents = [
         'components/ui/button.tsx',
-        'components/ui/tabs.tsx', 
+        'components/ui/tabs.tsx',
         'components/dashboard/profile-card.tsx',
         'components/dashboard/pending-approvals-card.tsx',
         'lib/utils.ts'
       ];
-      
+
       console.log('Component resolution test:');
       criticalComponents.forEach(comp => {
         const fullPath = path.join(srcPath, comp);
@@ -172,7 +186,7 @@ const nextConfig: NextConfig = {
         console.log(`  📦 ${comp}: ${exists ? '✅ FOUND' : '❌ MISSING'} ${fullPath}`);
       });
     }
-    
+
     // Configure robust path aliases
     const aliases = {
       '@': srcPath,
@@ -181,19 +195,19 @@ const nextConfig: NextConfig = {
       '@/hooks': requiredPaths.hooks,
       '@/ai': requiredPaths.ai
     };
-    
+
     config.resolve.alias = {
       ...config.resolve.alias,
       ...aliases
     };
-    
+
     // Ensure module resolution can find dependencies in both local and parent node_modules
     config.resolve.modules = [
       path.join(process.cwd(), 'node_modules'),
       path.resolve(process.cwd(), '../node_modules'),
       'node_modules'
     ];
-    
+
     if (isDebugMode) {
       console.log('Webpack aliases configured:');
       Object.entries(aliases).forEach(([alias, path]) => {
@@ -202,13 +216,13 @@ const nextConfig: NextConfig = {
       console.log('Module resolution paths:', config.resolve.modules);
       console.log('=== END DEBUG ===\n');
     }
-    
+
     // Ignore handlebars warnings from Genkit
     config.ignoreWarnings = [
       /require\.extensions is not supported by webpack/,
       /Cannot resolve module 'critters'/
     ];
-    
+
     // Bundle analyzer in development only
     if (process.env.ANALYZE === 'true' && !process.env.VERCEL) {
       const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
@@ -223,11 +237,12 @@ const nextConfig: NextConfig = {
 
     return config;
   },
-  
+
   // Image optimization
   images: {
     domains: ['cdn.saascontroldeck.com'],
     formats: ['image/webp', 'image/avif'],
+    minimumCacheTTL: 60, // 缓存优化
     remotePatterns: [
       {
         protocol: 'https',
@@ -246,16 +261,16 @@ const nextConfig: NextConfig = {
 
   // Compression
   compress: true,
-  
+
   // Power by header
   poweredByHeader: false,
-  
+
   // React strict mode
   reactStrictMode: true,
-  
+
   // SWC minification (default in Next.js 13+)
   // swcMinify: true, // Removed as it's default
-  
+
   // ESLint during builds
   eslint: {
     // Only run ESLint on specific directories during production builds

@@ -8,8 +8,10 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # Copy package files
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci --only=production
+COPY frontend/package.json ./
+
+# Install dependencies - use npm install if package-lock.json doesn't exist
+RUN npm install --only=production
 
 # Rebuild the source code only when needed
 FROM base AS builder

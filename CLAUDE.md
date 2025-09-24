@@ -56,6 +56,45 @@ The backend documentation covers:
 
 ## Development Environment
 
+### ⚠️ **重要：UV虚拟环境管理规则**
+
+**🔧 Python开发环境要求：**
+- **包管理工具**: 使用 UV (Unified Python Virtual Environment) 管理所有Python依赖
+- **虚拟环境**: 所有Python项目必须在UV虚拟环境中运行
+- **依赖安装**: 使用 `uv add <package>` 或 `uv pip install <package>` 安装依赖
+- **环境激活**: 使用 `uv shell` 激活虚拟环境
+
+**📋 UV命令规范：**
+```bash
+# 创建新虚拟环境
+uv venv
+
+# 激活虚拟环境
+uv shell
+
+# 安装依赖包
+uv add fastapi uvicorn
+uv pip install <package>
+
+# 运行Python应用
+uv run python main.py
+
+# 同步依赖（类似npm install）
+uv sync
+```
+
+**🚫 禁止使用的命令：**
+- ❌ `pip install` - 直接使用pip
+- ❌ `python -m venv` - 使用标准venv
+- ❌ `conda` - 使用Conda环境
+
+**✅ 强制要求：**
+- 所有Python开发必须在UV虚拟环境中进行
+- 所有依赖管理使用UV命令
+- 后端微服务启动前必须激活UV环境
+- **所有FastAPI服务必须使用Uvicorn启动** (`uv run uvicorn`)
+- 禁止直接使用 `python main.py` 启动FastAPI应用
+
 ### Firebase Studio Nix Architecture
 
 **重要：本项目运行在Firebase Studio的Nix架构环境中**
@@ -99,6 +138,7 @@ npm run dev      # 手动启动开发服务器（端口9000）
 
 All development commands should be run from the root directory:
 
+### 🎯 **前端开发命令**
 ```bash
 # 开发环境（Firebase Studio - 自动启动，无需手动运行）
 # npm run dev  # 在Firebase Studio环境中会自动执行
@@ -116,6 +156,51 @@ npm run typecheck
 # AI开发工具
 npm run genkit:dev    # 启动Genkit开发服务器
 npm run genkit:watch  # 启动Genkit文件监控模式
+```
+
+### 🐍 **后端开发命令 (UV虚拟环境)**
+```bash
+# ⚠️ 所有后端Python开发必须使用UV虚拟环境
+
+# 初始化UV环境（首次设置）
+cd backend/backend-pro1
+uv venv
+uv shell
+
+# 安装项目依赖
+uv sync                    # 同步pyproject.toml中的依赖
+uv add fastapi uvicorn    # 添加新的依赖包
+
+# 启动后端服务（在UV环境中）
+uv shell                           # 激活虚拟环境
+uv run uvicorn data-service.app.main:app --reload --port 8001    # 数据服务 (开发模式)
+uv run uvicorn data-service.app.main:app --host 0.0.0.0 --port 8001    # 生产模式
+
+# 数据库操作
+uv run python scripts/apply_base_schema.py    # 应用数据库架构
+uv run python scripts/apply_migrations.py    # 运行数据库迁移
+
+# 测试命令
+uv run pytest tests/                          # 运行测试套件
+uv run python scripts/test_data_apis.py      # 测试数据API
+```
+
+### ⚡ **快速启动流程**
+```bash
+# 完整系统启动
+cd /home/user/studio
+
+# 1. 后端启动（UV + Uvicorn）
+cd backend/backend-pro1
+uv shell
+uv run uvicorn data-service.app.main:app --reload --port 8001 &
+
+# 2. 前端自动启动（Firebase Studio管理）
+# 无需手动操作 - 访问 http://localhost:9000
+
+# 3. 验证服务状态
+curl http://localhost:8001/health    # 数据服务健康检查
+curl http://localhost:9000/api/ready # 前端API检查
 ```
 
 ## Code Organization

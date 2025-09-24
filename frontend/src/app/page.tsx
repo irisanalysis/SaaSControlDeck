@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import { ProtectedRoute } from "@/components/auth";
+import { useAuthUtils } from "@/hooks/use-auth";
 
 export const dynamic = 'force-dynamic';
 import { Button } from "../components/ui/button";
@@ -14,18 +16,19 @@ import DeviceManagementCard from "../components/dashboard/device-management-card
 import AIHelp from "../components/ai/ai-help";
 import { createCelebrationToast } from "../components/ui/toast";
 
-export default function DashboardPage() {
+function DashboardContent() {
   const [konami, setKonami] = React.useState<string>("");
   const [showEasterEgg, setShowEasterEgg] = React.useState(false);
   const [clickCount, setClickCount] = React.useState(0);
   const { createConfetti } = createCelebrationToast();
-  
+  const { getUserDisplayName } = useAuthUtils();
+
   // Konami code easter egg
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const konamiCode = "ArrowUpArrowUpArrowDownArrowDownArrowLeftArrowRightArrowLeftArrowRightKeyBKeyA";
       const newKonami = konami + e.code;
-      
+
       if (konamiCode.startsWith(newKonami)) {
         setKonami(newKonami);
         if (newKonami === konamiCode) {
@@ -38,11 +41,11 @@ export default function DashboardPage() {
         setKonami("");
       }
     };
-    
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [konami, createConfetti]);
-  
+
   // Click counter easter egg
   const handleLogoClick = () => {
     setClickCount(prev => {
@@ -54,7 +57,7 @@ export default function DashboardPage() {
       return newCount;
     });
   };
-  
+
   return (
     <>
       <div className="flex-1 space-y-4">
@@ -67,10 +70,10 @@ export default function DashboardPage() {
                 <span className="text-sm font-medium text-green-700">System Status: All Services Online</span>
               </div>
               <h2 className="text-4xl font-bold tracking-tight gradient-text">
-                Good morning, John!
+                Good morning, {getUserDisplayName()}!
               </h2>
               <p className="text-lg text-muted-foreground max-w-2xl">
-                Testing relative imports deployment
+                Testing data upload with authentication
               </p>
             </div>
             <div className="flex items-center space-x-3">
@@ -83,7 +86,7 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
-        
+
         <Tabs defaultValue="overview" className="space-y-4">
           <TabsList className="grid w-full grid-cols-4 bg-gradient-to-r from-orange-50 to-pink-50 border border-orange-100/50 p-1 rounded-xl">
             <TabsTrigger value="overview" className="data-[state=active]:bg-white">
@@ -99,7 +102,7 @@ export default function DashboardPage() {
               Notifications
             </TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="overview" className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-7">
               <div className="col-span-1 lg:col-span-4">
@@ -119,19 +122,19 @@ export default function DashboardPage() {
               </div>
             </div>
           </TabsContent>
-          
+
           <TabsContent value="analytics" className="space-y-6">
             <Card className="card-premium">
               <CardHeader>
                 <CardTitle>Analytics Test</CardTitle>
-                <CardDescription>Testing relative imports</CardDescription>
+                <CardDescription>Testing with authentication</CardDescription>
               </CardHeader>
               <CardContent>
-                <p>Analytics content with relative imports</p>
+                <p>Analytics content with authentication</p>
               </CardContent>
             </Card>
           </TabsContent>
-          
+
           <TabsContent value="reports" className="space-y-6">
             <Card className="card-premium">
               <CardHeader>
@@ -142,7 +145,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           </TabsContent>
-          
+
           <TabsContent value="notifications" className="space-y-6">
             <Card className="card-premium">
               <CardHeader>
@@ -157,5 +160,13 @@ export default function DashboardPage() {
       </div>
       <AIHelp />
     </>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <ProtectedRoute>
+      <DashboardContent />
+    </ProtectedRoute>
   );
 }

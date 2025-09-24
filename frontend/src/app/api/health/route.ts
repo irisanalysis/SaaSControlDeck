@@ -40,24 +40,12 @@ async function checkExternalServices(): Promise<ServiceHealth[]> {
   const services: ServiceHealth[] = [];
   const checkStartTime = Date.now();
 
-  // 检查SaaS Control Deck后端微服务
-  // Backend Pro1 - 主要服务集群
-  const backendPro1Services = [
-    { name: 'backend-pro1-api', port: 8000, service: 'API Gateway' },
-    { name: 'backend-pro1-data', port: 8001, service: 'Data Service' },
-    { name: 'backend-pro1-ai', port: 8002, service: 'AI Service' },
+  // 检查统一后端服务
+  const backendServices = [
+    { name: 'unified-backend', port: 8000, service: 'Unified Backend' },
   ];
 
-  // Backend Pro2 - 扩展服务集群
-  const backendPro2Services = [
-    { name: 'backend-pro2-api', port: 8100, service: 'API Gateway' },
-    { name: 'backend-pro2-data', port: 8101, service: 'Data Service' },
-    { name: 'backend-pro2-ai', port: 8102, service: 'AI Service' },
-  ];
-
-  const allBackendServices = [...backendPro1Services, ...backendPro2Services];
-
-  for (const { name, port, service } of allBackendServices) {
+  for (const { name, port, service } of backendServices) {
     const serviceStartTime = Date.now();
     try {
       const response = await fetch(`http://localhost:${port}/health`, {

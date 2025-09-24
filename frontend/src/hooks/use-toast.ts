@@ -159,7 +159,12 @@ function toast({ ...props }: Toast) {
       id,
       open: true,
       onOpenChange: (open) => {
-        if (!open) dismiss()
+        if (!open) {
+          // 使用异步延迟避免同步状态更新导致的无限循环
+          setTimeout(() => {
+            dismiss()
+          }, 0)
+        }
       },
     },
   })
@@ -175,14 +180,20 @@ function useToast() {
   const [state, setState] = React.useState<State>(memoryState)
 
   React.useEffect(() => {
-    listeners.push(setState)
+    // 使用稳定的回调函数引用，避免每次重新渲染都添加新的监听器
+    const stableSetState = (newState: State) => {
+      setState(newState)
+    }
+
+    listeners.push(stableSetState)
+
     return () => {
-      const index = listeners.indexOf(setState)
+      const index = listeners.indexOf(stableSetState)
       if (index > -1) {
         listeners.splice(index, 1)
       }
     }
-  }, [state])
+  }, []) // 空依赖数组，只在组件挂载时执行一次
 
   return {
     ...state,

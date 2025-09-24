@@ -29,17 +29,19 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useAuthUtils } from "@/hooks/use-auth";
 
-export function NavUser({
-  user,
-}: {
-  user: {
-    name: string;
-    email: string;
-    avatar: string;
-  };
-}) {
+export function NavUser() {
   const { isMobile } = useSidebar();
+  const { user, getUserDisplayName, getUserInitials, handleLogout } = useAuthUtils();
+
+  // If no user, don't render anything
+  if (!user) {
+    return null;
+  }
+
+  const displayName = getUserDisplayName();
+  const initials = getUserInitials();
 
   return (
     <SidebarMenu>
@@ -53,11 +55,11 @@ export function NavUser({
               <div className="relative">
                 <Avatar className="h-9 w-9 rounded-xl">
                   <AvatarImage
-                    src={user.avatar}
-                    alt={user.name}
+                    src={user.avatar_url || ''}
+                    alt={displayName}
                   />
                   <AvatarFallback className="rounded-xl">
-                    {user.name.split(' ').map((n) => n[0]).join('')}
+                    {initials}
                   </AvatarFallback>
                 </Avatar>
                 <span className="absolute -bottom-0.5 -right-0.5 flex size-3 items-center justify-center rounded-full bg-emerald-500 shadow-sm">
@@ -65,7 +67,7 @@ export function NavUser({
                 </span>
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">{user.name}</span>
+                <span className="truncate font-semibold">{displayName}</span>
                 <span className="truncate text-xs text-muted-foreground">
                   {user.email}
                 </span>
@@ -87,15 +89,15 @@ export function NavUser({
               <div className="flex items-center gap-3 rounded-xl bg-orange-500/10 px-3 py-2 text-left text-sm">
                 <Avatar className="h-9 w-9 rounded-xl">
                   <AvatarImage
-                    src={user.avatar}
-                    alt={user.name}
+                    src={user.avatar_url || ''}
+                    alt={displayName}
                   />
                   <AvatarFallback className="rounded-xl">
-                    {user.name.split(' ').map((n) => n[0]).join('')}
+                    {initials}
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-semibold">{user.name}</span>
+                  <span className="truncate font-semibold">{displayName}</span>
                   <span className="truncate text-xs text-muted-foreground">
                     {user.email}
                   </span>
@@ -125,9 +127,9 @@ export function NavUser({
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={handleLogout}>
               <LogOut />
-              Log out
+              登出
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

@@ -34,7 +34,21 @@ export function TeamSwitcher({
   }[];
 }) {
   const { isMobile } = useSidebar();
-  const [activeTeam, setActiveTeam] = React.useState(teams[0]);
+  // Fix hydration mismatch by ensuring consistent initial state
+  const [activeTeam, setActiveTeam] = React.useState(() => {
+    // Return null initially to avoid hydration mismatch
+    if (typeof window === 'undefined') {
+      return teams[0]; // Use first team as fallback for SSR
+    }
+    return teams[0];
+  });
+
+  // Ensure we have a valid team after mount
+  React.useEffect(() => {
+    if (!activeTeam && teams.length > 0) {
+      setActiveTeam(teams[0]);
+    }
+  }, [activeTeam, teams]);
 
   return (
     <SidebarMenu>

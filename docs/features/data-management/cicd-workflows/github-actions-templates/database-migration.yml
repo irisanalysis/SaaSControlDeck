@@ -1,0 +1,545 @@
+# Database Migration Workflow
+# Complete database migration automation for SaaS Control Deck
+
+name: Database Migration Workflow
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'backend/backend-pro1/alembic/**'
+      - 'backend/backend-pro2/alembic/**'
+      - 'backend/*/models/**'
+      - 'backend/*/schemas/**'
+      - 'scripts/database/**'
+
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/backend-pro1/alembic/**'
+      - 'backend/backend-pro2/alembic/**'
+      - 'backend/*/models/**'
+      - 'backend/*/schemas/**'
+
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: 'Target environment for migration'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - development
+        - staging
+        - production
+
+      migration_type:
+        description: 'Migration type'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+        - auto
+        - manual
+        - rollback
+
+      confirm_production:
+        description: 'Confirm production deployment (type PRODUCTION to confirm)'
+        required: false
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+
+jobs:
+  # =============================================================================
+  # MIGRATION VALIDATION AND PLANNING
+  # =============================================================================
+  validate-migrations:
+    runs-on: ubuntu-latest
+    outputs:
+      pro1-changes: ${{ steps.detect.outputs.pro1-changes }}
+      pro2-changes: ${{ steps.detect.outputs.pro2-changes }}
+      migration-plan: ${{ steps.plan.outputs.migration-plan }}
+      safety-checks: ${{ steps.safety.outputs.passed }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        pip install asyncpg alembic sqlalchemy pydantic
+
+    - name: Detect schema changes
+      id: detect
+      run: |
+        # Check for Pro1 migrations
+        if git diff HEAD~1 --name-only | grep -E "(backend-pro1/alembic|backend-pro1/models)" > /dev/null; then
+          echo "pro1-changes=true" >> $GITHUB_OUTPUT
+        else
+          echo "pro1-changes=false" >> $GITHUB_OUTPUT
+        fi
+
+        # Check for Pro2 migrations
+        if git diff HEAD~1 --name-only | grep -E "(backend-pro2/alembic|backend-pro2/models)" > /dev/null; then
+          echo "pro2-changes=true" >> $GITHUB_OUTPUT
+        else
+          echo "pro2-changes=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Generate migration plan
+      id: plan
+      if: steps.detect.outputs.pro1-changes == 'true' || steps.detect.outputs.pro2-changes == 'true'
+      run: |
+        python scripts/database/generate-migration-plan.py \
+          --pro1-changes ${{ steps.detect.outputs.pro1-changes }} \
+          --pro2-changes ${{ steps.detect.outputs.pro2-changes }} \
+          --target-env ${{ github.event.inputs.target_environment || 'development' }} \
+          --output-file migration-plan.json
+
+        echo "migration-plan=$(cat migration-plan.json | jq -c)" >> $GITHUB_OUTPUT
+
+    - name: Safety checks
+      id: safety
+      if: steps.detect.outputs.pro1-changes == 'true' || steps.detect.outputs.pro2-changes == 'true'
+      run: |
+        python scripts/database/migration-safety-checks.py \
+          --migration-plan migration-plan.json \
+          --environment ${{ github.event.inputs.target_environment || 'development' }}
+
+        echo "passed=true" >> $GITHUB_OUTPUT
+
+    - name: Upload migration plan
+      if: steps.detect.outputs.pro1-changes == 'true' || steps.detect.outputs.pro2-changes == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        name: migration-plan
+        path: migration-plan.json
+
+  # =============================================================================
+  # DEVELOPMENT ENVIRONMENT MIGRATION
+  # =============================================================================
+  migrate-development:
+    needs: validate-migrations
+    if: |
+      (github.ref == 'refs/heads/develop' || github.event.inputs.target_environment == 'development') &&
+      (needs.validate-migrations.outputs.pro1-changes == 'true' || needs.validate-migrations.outputs.pro2-changes == 'true') &&
+      needs.validate-migrations.outputs.safety-checks == 'true'
+    runs-on: ubuntu-latest
+    environment: development
+
+    strategy:
+      matrix:
+        service: [pro1, pro2]
+        include:
+        - service: pro1
+          changes: ${{ needs.validate-migrations.outputs.pro1-changes }}
+        - service: pro2
+          changes: ${{ needs.validate-migrations.outputs.pro2-changes }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        cd backend/backend-${{ matrix.service }}
+        pip install -r requirements.txt
+
+    - name: Download migration plan
+      uses: actions/download-artifact@v3
+      with:
+        name: migration-plan
+
+    - name: Create pre-migration backup
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('DEV_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/create-migration-backup.py \
+          --database-url $DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment development \
+          --backup-type pre-migration
+
+    - name: Generate and validate migration
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('DEV_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        cd backend/backend-${{ matrix.service }}
+
+        # Generate migration if needed
+        if [ "${{ github.event.inputs.migration_type }}" != "manual" ]; then
+          alembic revision --autogenerate -m "Auto-migration $(date +%Y%m%d_%H%M%S)"
+        fi
+
+        # Validate migration
+        alembic check
+        python ../scripts/validate-migration.py
+
+    - name: Apply migration
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('DEV_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        cd backend/backend-${{ matrix.service }}
+        alembic upgrade head
+
+    - name: Verify migration integrity
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('DEV_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/verify-schema-integrity.py \
+          --database-url $DATABASE_URL \
+          --service ${{ matrix.service }}
+
+    - name: Update migration metadata
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('DEV_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/update-migration-metadata.py \
+          --database-url $DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment development \
+          --migration-plan migration-plan.json
+
+  # =============================================================================
+  # STAGING ENVIRONMENT MIGRATION
+  # =============================================================================
+  migrate-staging:
+    needs: [validate-migrations, migrate-development]
+    if: |
+      (github.ref == 'refs/heads/main' || github.event.inputs.target_environment == 'staging') &&
+      (needs.validate-migrations.outputs.pro1-changes == 'true' || needs.validate-migrations.outputs.pro2-changes == 'true') &&
+      needs.validate-migrations.outputs.safety-checks == 'true'
+    runs-on: ubuntu-latest
+    environment: staging
+
+    strategy:
+      matrix:
+        service: [pro1, pro2]
+        include:
+        - service: pro1
+          changes: ${{ needs.validate-migrations.outputs.pro1-changes }}
+        - service: pro2
+          changes: ${{ needs.validate-migrations.outputs.pro2-changes }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        cd backend/backend-${{ matrix.service }}
+        pip install -r requirements.txt
+
+    - name: Download migration plan
+      uses: actions/download-artifact@v3
+      with:
+        name: migration-plan
+
+    - name: Create staging backup
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/create-migration-backup.py \
+          --database-url $DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment staging \
+          --backup-type pre-migration
+
+    - name: Sync schema from development
+      if: matrix.changes == 'true'
+      env:
+        DEV_DATABASE_URL: ${{ secrets[format('DEV_{0}_DATABASE_URL', upper(matrix.service))] }}
+        STAGING_DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/sync-schema.py \
+          --source-db $DEV_DATABASE_URL \
+          --target-db $STAGING_DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment staging
+
+    - name: Apply staging migrations
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        cd backend/backend-${{ matrix.service }}
+        alembic upgrade head
+
+    - name: Load staging test data
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/load-test-data.py \
+          --database-url $DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment staging
+
+    - name: Run integration tests
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        cd backend/backend-${{ matrix.service }}
+        pytest tests/integration/ -v --tb=short
+        pytest tests/performance/ -v --tb=short
+
+    - name: Validate staging integrity
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/comprehensive-validation.py \
+          --database-url $DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment staging
+
+  # =============================================================================
+  # PRODUCTION ENVIRONMENT MIGRATION
+  # =============================================================================
+  validate-production-request:
+    needs: [validate-migrations, migrate-staging]
+    if: |
+      github.event.inputs.target_environment == 'production' &&
+      github.event.inputs.confirm_production == 'PRODUCTION'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Validate production deployment request
+      run: |
+        echo "✅ Production deployment confirmed"
+        echo "Migration plan: ${{ needs.validate-migrations.outputs.migration-plan }}"
+        echo "Initiated by: ${{ github.actor }}"
+        echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  migrate-production:
+    needs: [validate-migrations, migrate-staging, validate-production-request]
+    if: |
+      github.event.inputs.target_environment == 'production' &&
+      github.event.inputs.confirm_production == 'PRODUCTION' &&
+      (needs.validate-migrations.outputs.pro1-changes == 'true' || needs.validate-migrations.outputs.pro2-changes == 'true')
+    runs-on: ubuntu-latest
+    environment: production
+
+    strategy:
+      matrix:
+        service: [pro1, pro2]
+        include:
+        - service: pro1
+          changes: ${{ needs.validate-migrations.outputs.pro1-changes }}
+        - service: pro2
+          changes: ${{ needs.validate-migrations.outputs.pro2-changes }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        cd backend/backend-${{ matrix.service }}
+        pip install -r requirements.txt
+
+    - name: Download migration plan
+      uses: actions/download-artifact@v3
+      with:
+        name: migration-plan
+
+    - name: Pre-production health check
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('PROD_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/production-health-check.py \
+          --database-url $DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --comprehensive
+
+    - name: Create production backup
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('PROD_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/create-production-backup.py \
+          --database-url $DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --backup-type full \
+          --retention-days 90 \
+          --compression gzip
+
+    - name: Validate production compatibility
+      if: matrix.changes == 'true'
+      env:
+        STAGING_DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+        PROD_DATABASE_URL: ${{ secrets[format('PROD_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/validate-production-compatibility.py \
+          --staging-db $STAGING_DATABASE_URL \
+          --production-db $PROD_DATABASE_URL \
+          --service ${{ matrix.service }}
+
+    - name: Execute blue-green migration
+      if: matrix.changes == 'true'
+      env:
+        BLUE_DATABASE_URL: ${{ secrets[format('PROD_{0}_DATABASE_URL', upper(matrix.service))] }}
+        GREEN_DATABASE_URL: ${{ secrets[format('GREEN_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/blue-green-migration.py \
+          --blue-db $BLUE_DATABASE_URL \
+          --green-db $GREEN_DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --migration-plan migration-plan.json
+
+    - name: Validate production migration
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('PROD_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/post-migration-validation.py \
+          --database-url $DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment production
+
+    - name: Update production metadata
+      if: matrix.changes == 'true'
+      env:
+        DATABASE_URL: ${{ secrets[format('PROD_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/database/update-migration-metadata.py \
+          --database-url $DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment production \
+          --migration-plan migration-plan.json
+
+  # =============================================================================
+  # ROLLBACK PROCEDURES
+  # =============================================================================
+  rollback-migration:
+    if: |
+      failure() &&
+      (github.event.inputs.migration_type == 'rollback' ||
+       github.event.inputs.target_environment == 'production')
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target_environment || 'staging' }}
+
+    strategy:
+      matrix:
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        pip install asyncpg alembic sqlalchemy
+
+    - name: Execute automatic rollback
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(github.event.inputs.target_environment), upper(matrix.service))] }}
+        BACKUP_DATABASE_URL: ${{ secrets[format('BACKUP_{0}_{1}_DATABASE_URL', upper(github.event.inputs.target_environment), upper(matrix.service))] }}
+      run: |
+        python scripts/database/automatic-rollback.py \
+          --database-url $DATABASE_URL \
+          --backup-db $BACKUP_DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --rollback-reason "Migration validation failed"
+
+    - name: Notify rollback completion
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_ALERTS_WEBHOOK }}
+      run: |
+        python scripts/notifications/send-rollback-notification.py \
+          --webhook $SLACK_WEBHOOK \
+          --service ${{ matrix.service }} \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --reason "Migration rollback completed"
+
+  # =============================================================================
+  # NOTIFICATION AND REPORTING
+  # =============================================================================
+  notify-completion:
+    needs: [migrate-development, migrate-staging, migrate-production]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Generate migration report
+      run: |
+        python scripts/database/generate-migration-report.py \
+          --workflow-run ${{ github.run_id }} \
+          --environment ${{ github.event.inputs.target_environment || 'auto' }} \
+          --output-file migration-report.json
+
+    - name: Send Slack notification
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_DATABASE_WEBHOOK }}
+      run: |
+        python scripts/notifications/send-migration-notification.py \
+          --webhook $SLACK_WEBHOOK \
+          --report migration-report.json \
+          --status ${{ job.status }}
+
+    - name: Upload migration report
+      uses: actions/upload-artifact@v3
+      with:
+        name: migration-report
+        path: migration-report.json
+
+    - name: Update documentation
+      if: success()
+      run: |
+        python scripts/documentation/update-migration-docs.py \
+          --report migration-report.json \
+          --docs-path docs/database/migrations/
+
+    - name: Commit documentation updates
+      if: success()
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add docs/database/migrations/
+        git diff --staged --quiet || git commit -m "📝 Update migration documentation
+
+        🤖 Generated with Claude Code (https://claude.ai/code)
+
+        Co-Authored-By: Claude <noreply@anthropic.com>"

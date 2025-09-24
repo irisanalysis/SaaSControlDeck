@@ -192,7 +192,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof SidebarCont
           <Sparkles className="size-4" />
           Launch AI Copilot
         </Button>
-        <NavUser user={config.user} />
+        <NavUser />
       </SidebarFooter>
       <SidebarRail />
     </>

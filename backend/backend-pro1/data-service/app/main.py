@@ -23,7 +23,7 @@ from shared.redis_client import RedisClient
 from shared.middleware.request_id import RequestIDMiddleware
 from shared.middleware.metrics import MetricsMiddleware
 
-from app.routers import data_upload, data_management, data_processing
+from app.routers import data_upload, data_management, data_processing, data_preview
 
 
 @asynccontextmanager
@@ -76,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(data_upload.router, prefix="/upload", tags=["数据上传"])
     app.include_router(data_management.router, prefix="/manage", tags=["数据管理"])
     app.include_router(data_processing.router, prefix="/process", tags=["数据处理"])
+    app.include_router(data_preview.router, prefix="/preview", tags=["数据预览"])
     
     @app.get("/health")
     async def health_check():

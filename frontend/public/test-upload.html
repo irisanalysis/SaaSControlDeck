@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>测试上传功能</title>
+</head>
+<body>
+    <h1>SaaS Control Deck - 上传测试</h1>
+
+    <div id="login-section">
+        <h2>登录</h2>
+        <input type="email" id="email" placeholder="邮箱" value="test@saascontrol.dev">
+        <input type="password" id="password" placeholder="密码" value="TestPass123">
+        <button onclick="login()">登录</button>
+        <div id="login-status"></div>
+    </div>
+
+    <div id="upload-section" style="display:none;">
+        <h2>文件上传</h2>
+        <input type="file" id="fileInput" accept=".csv,.json,.xlsx,.xls,.parquet">
+        <button onclick="uploadFile()">上传文件</button>
+        <div id="upload-status"></div>
+    </div>
+
+    <script>
+        let accessToken = null;
+
+        async function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.access_token) {
+                    accessToken = data.access_token;
+                    document.getElementById('login-status').innerHTML =
+                        `<p style="color: green;">登录成功！用户：${data.user.full_name}</p>`;
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('upload-section').style.display = 'block';
+                } else {
+                    document.getElementById('login-status').innerHTML =
+                        `<p style="color: red;">登录失败：${data.message || '未知错误'}</p>`;
+                }
+            } catch (error) {
+                document.getElementById('login-status').innerHTML =
+                    `<p style="color: red;">登录错误：${error.message}</p>`;
+            }
+        }
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('请选择文件');
+                return;
+            }
+
+            if (!accessToken) {
+                alert('请先登录');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('project_id', '1');
+
+            try {
+                document.getElementById('upload-status').innerHTML = '<p>上传中...</p>';
+
+                const response = await fetch('/api/data/upload/file', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    document.getElementById('upload-status').innerHTML =
+                        `<p style="color: green;">上传成功！
+                        <br>文件ID：${data.file.id}
+                        <br>文件名：${data.file.filename}
+                        <br>文件大小：${data.file.size} 字节
+                        <br>上传时间：${data.file.uploaded_at}</p>`;
+                } else {
+                    document.getElementById('upload-status').innerHTML =
+                        `<p style="color: red;">上传失败：${data.message || data.error || '未知错误'}</p>`;
+                }
+            } catch (error) {
+                document.getElementById('upload-status').innerHTML =
+                    `<p style="color: red;">上传错误：${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -5,10 +5,18 @@
   channel = "stable-24.11"; # or "unstable"
   # Use https://search.nixos.org/packages to find packages
   packages = [
+    pkgs.sudo
     pkgs.nodejs_20
     pkgs.zulu
     pkgs.uv
-    pkgs.python313
+    pkgs.python3
+    pkgs.python3Packages.pip
+    pkgs.python3Packages.setuptools
+    pkgs.python3Packages.wheel
+    # Redis support
+    pkgs.redis
+    pkgs.docker
+    pkgs.docker-compose
   ];
   # Sets environment variables in the workspace
   env = {};

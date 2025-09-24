@@ -168,6 +168,19 @@ export const defaultSidebarConfig: SidebarConfig = {
       ],
     },
     {
+      title: "Data Management",
+      href: "/data-management",
+      icon: Database,
+      description: "Connect and manage data sources for AI analysis.",
+      badge: "New",
+      badgeTone: "neutral",
+      items: [
+        { title: "Data Sources", href: "/data-management" },
+        { title: "Connections", href: "/data-management/connections" },
+        { title: "Quality Reports", href: "/data-management/quality" },
+      ],
+    },
+    {
       title: "Knowledge Base",
       href: "/knowledge",
       icon: BookOpen,

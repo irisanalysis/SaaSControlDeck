@@ -1,0 +1,580 @@
+# Data Quality Monitoring Workflow
+# Continuous data quality monitoring and alerting
+
+name: Data Quality Monitoring
+
+on:
+  schedule:
+    # Real-time monitoring every 15 minutes
+    - cron: '*/15 * * * *'
+    # Comprehensive daily report at 6 AM UTC
+    - cron: '0 6 * * *'
+    # Weekly deep analysis on Sundays at 4 AM UTC
+    - cron: '0 4 * * 0'
+
+  workflow_dispatch:
+    inputs:
+      monitoring_scope:
+        description: 'Monitoring scope'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - integrity
+        - completeness
+        - accuracy
+        - consistency
+        - timeliness
+        - performance
+        - compliance
+        - business-rules
+
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - development
+        - staging
+        - production
+
+      alert_threshold:
+        description: 'Alert threshold (quality score)'
+        required: true
+        default: '0.85'
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # =============================================================================
+  # REAL-TIME QUALITY ASSESSMENT
+  # =============================================================================
+  real-time-quality-assessment:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '*/15 * * * *' || github.event_name == 'workflow_dispatch'
+
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(github.event.inputs.environment == 'all' && '["development", "staging", "production"]' || format('["{0}"]', github.event.inputs.environment)) }}
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install monitoring dependencies
+      run: |
+        pip install asyncpg pandas numpy prometheus-client slack-sdk
+
+    - name: Execute real-time quality checks
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+        PROMETHEUS_GATEWAY: ${{ secrets.PROMETHEUS_PUSHGATEWAY_URL }}
+        SLACK_WEBHOOK: ${{ secrets.SLACK_DATA_QUALITY_WEBHOOK }}
+        ALERT_THRESHOLD: ${{ github.event.inputs.alert_threshold || '0.85' }}
+      run: |
+        python scripts/quality/data-quality-monitor.py \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --scope ${{ github.event.inputs.monitoring_scope || 'all' }} \
+          --database-url $DATABASE_URL \
+          --alert-threshold $ALERT_THRESHOLD \
+          --real-time-mode
+
+    - name: Push metrics to Prometheus
+      env:
+        PROMETHEUS_GATEWAY: ${{ secrets.PROMETHEUS_PUSHGATEWAY_URL }}
+      run: |
+        python scripts/quality/push-quality-metrics.py \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --metrics-file /tmp/quality-metrics.json \
+          --prometheus-gateway $PROMETHEUS_GATEWAY
+
+    - name: Check alert conditions
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_DATA_QUALITY_WEBHOOK }}
+        PAGERDUTY_API_KEY: ${{ secrets.PAGERDUTY_API_KEY }}
+        ALERT_THRESHOLD: ${{ github.event.inputs.alert_threshold || '0.85' }}
+      run: |
+        python scripts/quality/check-alert-conditions.py \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --quality-results /tmp/quality-metrics.json \
+          --alert-threshold $ALERT_THRESHOLD \
+          --slack-webhook $SLACK_WEBHOOK \
+          --pagerduty-key $PAGERDUTY_API_KEY
+
+  # =============================================================================
+  # DAILY COMPREHENSIVE QUALITY REPORT
+  # =============================================================================
+  daily-quality-report:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 6 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.monitoring_scope == 'all')
+
+    strategy:
+      matrix:
+        environment: [development, staging, production]
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install comprehensive monitoring dependencies
+      run: |
+        pip install asyncpg pandas numpy matplotlib seaborn plotly prometheus-client
+
+    - name: Execute comprehensive quality assessment
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/quality/comprehensive-quality-assessment.py \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --database-url $DATABASE_URL \
+          --report-type daily \
+          --include-trends \
+          --include-predictions \
+          --output-dir reports/quality/daily/
+
+    - name: Generate quality visualizations
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/quality/generate-quality-visualizations.py \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --database-url $DATABASE_URL \
+          --report-data reports/quality/daily/${{ matrix.environment }}-${{ matrix.service }}-report.json \
+          --output-dir reports/quality/visualizations/
+
+    - name: Upload quality reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: daily-quality-reports-${{ matrix.environment }}-${{ matrix.service }}
+        path: reports/quality/
+
+  # =============================================================================
+  # AI-POWERED ANOMALY DETECTION
+  # =============================================================================
+  ai-anomaly-detection:
+    needs: real-time-quality-assessment
+    runs-on: ubuntu-latest
+    if: always()
+
+    strategy:
+      matrix:
+        environment: [development, staging, production]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install AI/ML dependencies
+      run: |
+        pip install asyncpg pandas numpy scikit-learn openai transformers
+
+    - name: AI-powered anomaly detection
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(matrix.environment))] }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        python scripts/quality/ai-anomaly-detection.py \
+          --environment ${{ matrix.environment }} \
+          --database-url $DATABASE_URL \
+          --openai-api-key $OPENAI_API_KEY \
+          --lookback-hours 24 \
+          --sensitivity-level medium \
+          --output-file anomaly-report-${{ matrix.environment }}.json
+
+    - name: Machine learning trend analysis
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(matrix.environment))] }}
+      run: |
+        python scripts/quality/ml-trend-analysis.py \
+          --environment ${{ matrix.environment }} \
+          --database-url $DATABASE_URL \
+          --forecast-days 7 \
+          --model-type ensemble \
+          --output-file trend-forecast-${{ matrix.environment }}.json
+
+    - name: Generate AI insights report
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        python scripts/quality/generate-ai-insights.py \
+          --anomaly-report anomaly-report-${{ matrix.environment }}.json \
+          --trend-forecast trend-forecast-${{ matrix.environment }}.json \
+          --openai-api-key $OPENAI_API_KEY \
+          --output-file ai-insights-${{ matrix.environment }}.json
+
+    - name: Upload AI analysis reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: ai-analysis-reports-${{ matrix.environment }}
+        path: |
+          anomaly-report-${{ matrix.environment }}.json
+          trend-forecast-${{ matrix.environment }}.json
+          ai-insights-${{ matrix.environment }}.json
+
+  # =============================================================================
+  # BUSINESS RULE VALIDATION
+  # =============================================================================
+  business-rule-validation:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 6 * * *' || github.event.inputs.monitoring_scope == 'business-rules'
+
+    strategy:
+      matrix:
+        environment: [development, staging, production]
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install business rule dependencies
+      run: |
+        pip install asyncpg pandas pydantic
+
+    - name: Validate subscription quotas
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/quality/validate-subscription-quotas.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --output-file quota-validation-${{ matrix.environment }}-${{ matrix.service }}.json
+
+    - name: Check AI task compliance
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/quality/check-ai-task-compliance.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --business-rules config/business-rules.yaml \
+          --output-file ai-compliance-${{ matrix.environment }}-${{ matrix.service }}.json
+
+    - name: Validate billing accuracy
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+        BILLING_API_KEY: ${{ secrets.BILLING_API_KEY }}
+      run: |
+        python scripts/quality/validate-billing-accuracy.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --billing-api-key $BILLING_API_KEY \
+          --output-file billing-validation-${{ matrix.environment }}-${{ matrix.service }}.json
+
+    - name: Upload business rule reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: business-rule-reports-${{ matrix.environment }}-${{ matrix.service }}
+        path: |
+          quota-validation-${{ matrix.environment }}-${{ matrix.service }}.json
+          ai-compliance-${{ matrix.environment }}-${{ matrix.service }}.json
+          billing-validation-${{ matrix.environment }}-${{ matrix.service }}.json
+
+  # =============================================================================
+  # PERFORMANCE QUALITY MONITORING
+  # =============================================================================
+  performance-quality-monitoring:
+    runs-on: ubuntu-latest
+    if: github.event.schedule || github.event.inputs.monitoring_scope == 'performance'
+
+    strategy:
+      matrix:
+        environment: [development, staging, production]
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install performance monitoring dependencies
+      run: |
+        pip install asyncpg pandas psutil prometheus-client
+
+    - name: Monitor query performance
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/quality/monitor-query-performance.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --monitoring-duration 300 \
+          --output-file query-performance-${{ matrix.environment }}-${{ matrix.service }}.json
+
+    - name: Analyze connection pool health
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/quality/analyze-connection-health.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --output-file connection-health-${{ matrix.environment }}-${{ matrix.service }}.json
+
+    - name: Check resource utilization
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/quality/check-resource-utilization.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --monitoring-window 3600 \
+          --output-file resource-utilization-${{ matrix.environment }}-${{ matrix.service }}.json
+
+    - name: Generate performance recommendations
+      run: |
+        python scripts/quality/generate-performance-recommendations.py \
+          --query-performance query-performance-${{ matrix.environment }}-${{ matrix.service }}.json \
+          --connection-health connection-health-${{ matrix.environment }}-${{ matrix.service }}.json \
+          --resource-utilization resource-utilization-${{ matrix.environment }}-${{ matrix.service }}.json \
+          --output-file performance-recommendations-${{ matrix.environment }}-${{ matrix.service }}.json
+
+    - name: Upload performance reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-reports-${{ matrix.environment }}-${{ matrix.service }}
+        path: |
+          query-performance-${{ matrix.environment }}-${{ matrix.service }}.json
+          connection-health-${{ matrix.environment }}-${{ matrix.service }}.json
+          resource-utilization-${{ matrix.environment }}-${{ matrix.service }}.json
+          performance-recommendations-${{ matrix.environment }}-${{ matrix.service }}.json
+
+  # =============================================================================
+  # WEEKLY DEEP ANALYSIS
+  # =============================================================================
+  weekly-deep-analysis:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 4 * * 0'
+
+    strategy:
+      matrix:
+        environment: [development, staging, production]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install deep analysis dependencies
+      run: |
+        pip install asyncpg pandas numpy matplotlib seaborn plotly scikit-learn
+
+    - name: Execute weekly trend analysis
+      env:
+        PRO1_DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(matrix.environment))] }}
+        PRO2_DATABASE_URL: ${{ secrets[format('{0}_PRO2_DATABASE_URL', upper(matrix.environment))] }}
+      run: |
+        python scripts/quality/weekly-trend-analysis.py \
+          --pro1-db $PRO1_DATABASE_URL \
+          --pro2-db $PRO2_DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --analysis-period 7 \
+          --include-forecasting \
+          --output-dir reports/quality/weekly/${{ matrix.environment }}/
+
+    - name: Cross-service comparison analysis
+      env:
+        PRO1_DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(matrix.environment))] }}
+        PRO2_DATABASE_URL: ${{ secrets[format('{0}_PRO2_DATABASE_URL', upper(matrix.environment))] }}
+      run: |
+        python scripts/quality/cross-service-analysis.py \
+          --pro1-db $PRO1_DATABASE_URL \
+          --pro2-db $PRO2_DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --comparison-metrics all \
+          --output-file cross-service-analysis-${{ matrix.environment }}.json
+
+    - name: Generate capacity planning recommendations
+      env:
+        PRO1_DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(matrix.environment))] }}
+        PRO2_DATABASE_URL: ${{ secrets[format('{0}_PRO2_DATABASE_URL', upper(matrix.environment))] }}
+      run: |
+        python scripts/quality/capacity-planning-analysis.py \
+          --pro1-db $PRO1_DATABASE_URL \
+          --pro2-db $PRO2_DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --forecast-horizon 30 \
+          --growth-scenarios conservative,optimistic,aggressive \
+          --output-file capacity-planning-${{ matrix.environment }}.json
+
+    - name: Upload weekly analysis reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: weekly-analysis-${{ matrix.environment }}
+        path: |
+          reports/quality/weekly/${{ matrix.environment }}/
+          cross-service-analysis-${{ matrix.environment }}.json
+          capacity-planning-${{ matrix.environment }}.json
+
+  # =============================================================================
+  # AUTO-REMEDIATION
+  # =============================================================================
+  auto-remediation:
+    needs: [real-time-quality-assessment, performance-quality-monitoring]
+    if: always() && (needs.real-time-quality-assessment.result == 'failure' || needs.performance-quality-monitoring.result == 'failure')
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        environment: [development, staging, production]
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install remediation dependencies
+      run: |
+        pip install asyncpg psutil
+
+    - name: Execute auto-remediation
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/quality/auto-remediation.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --remediation-level ${{ matrix.environment == 'production' && 'conservative' || 'aggressive' }} \
+          --dry-run ${{ matrix.environment == 'production' && 'true' || 'false' }}
+
+    - name: Notify remediation actions
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_DATA_QUALITY_WEBHOOK }}
+      run: |
+        python scripts/notifications/send-remediation-notification.py \
+          --webhook $SLACK_WEBHOOK \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --remediation-report remediation-report.json
+
+  # =============================================================================
+  # CONSOLIDATED REPORTING
+  # =============================================================================
+  consolidated-reporting:
+    needs: [daily-quality-report, ai-anomaly-detection, business-rule-validation, performance-quality-monitoring, weekly-deep-analysis]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all quality reports
+      uses: actions/download-artifact@v3
+
+    - name: Generate consolidated quality dashboard
+      run: |
+        python scripts/quality/generate-consolidated-dashboard.py \
+          --artifacts-dir . \
+          --workflow-run ${{ github.run_id }} \
+          --monitoring-scope ${{ github.event.inputs.monitoring_scope || 'all' }} \
+          --environments ${{ github.event.inputs.environment || 'all' }} \
+          --output-file consolidated-quality-dashboard.html
+
+    - name: Generate executive summary
+      run: |
+        python scripts/quality/generate-executive-summary.py \
+          --artifacts-dir . \
+          --output-file executive-quality-summary.json
+
+    - name: Send comprehensive notifications
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_DATA_QUALITY_WEBHOOK }}
+        EMAIL_API_KEY: ${{ secrets.EMAIL_API_KEY }}
+      run: |
+        python scripts/notifications/send-comprehensive-quality-notification.py \
+          --slack-webhook $SLACK_WEBHOOK \
+          --email-api-key $EMAIL_API_KEY \
+          --dashboard-file consolidated-quality-dashboard.html \
+          --summary-file executive-quality-summary.json
+
+    - name: Update quality metrics dashboard
+      env:
+        GRAFANA_API_KEY: ${{ secrets.GRAFANA_API_KEY }}
+        GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+      run: |
+        python scripts/quality/update-grafana-dashboard.py \
+          --grafana-url $GRAFANA_URL \
+          --api-key $GRAFANA_API_KEY \
+          --quality-data executive-quality-summary.json
+
+    - name: Upload consolidated reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: consolidated-quality-reports
+        path: |
+          consolidated-quality-dashboard.html
+          executive-quality-summary.json
+
+    - name: Commit quality metrics to repository
+      if: github.event.schedule == '0 6 * * *'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+        # Create metrics directory if it doesn't exist
+        mkdir -p metrics/quality/$(date +%Y/%m/)
+
+        # Copy summary to metrics
+        cp executive-quality-summary.json metrics/quality/$(date +%Y/%m/)/quality-summary-$(date +%Y%m%d).json
+
+        git add metrics/quality/
+        git diff --staged --quiet || git commit -m "📊 Daily data quality metrics update
+
+        Quality assessment completed for all environments
+        Date: $(date +%Y-%m-%d)
+
+        🤖 Generated with Claude Code (https://claude.ai/code)
+
+        Co-Authored-By: Claude <noreply@anthropic.com>"

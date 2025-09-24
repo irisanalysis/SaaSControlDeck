@@ -1,0 +1,648 @@
+# Commercial Feature Deployment Workflow
+# Subscription tier management and feature flag deployment
+
+name: Commercial Feature Deployment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'config/features/**'
+      - 'backend/*/features/**'
+      - 'frontend/src/features/**'
+      - 'config/subscriptions/**'
+
+  workflow_dispatch:
+    inputs:
+      deployment_type:
+        description: 'Deployment type'
+        required: true
+        default: 'feature-flags'
+        type: choice
+        options:
+        - feature-flags
+        - subscription-update
+        - billing-sync
+        - usage-quota-update
+        - ab-test-deployment
+
+      target_environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+      rollout_strategy:
+        description: 'Rollout strategy'
+        required: true
+        default: 'gradual'
+        type: choice
+        options:
+        - immediate
+        - gradual
+        - canary
+        - blue-green
+        - ab-test
+
+      canary_percentage:
+        description: 'Canary rollout percentage (5-25)'
+        required: false
+        default: '10'
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # =============================================================================
+  # COMMERCIAL DEPLOYMENT VALIDATION
+  # =============================================================================
+  validate-commercial-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      deployment-approved: ${{ steps.validate.outputs.approved }}
+      affected-features: ${{ steps.validate.outputs.features }}
+      billing-impact: ${{ steps.billing.outputs.impact }}
+      rollout-plan: ${{ steps.plan.outputs.rollout-plan }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install validation dependencies
+      run: |
+        pip install pydantic yaml-validator
+
+    - name: Validate feature flag configuration
+      id: validate
+      run: |
+        python scripts/commercial/validate-feature-config.py \
+          --config-dir config/features/ \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --deployment-type ${{ github.event.inputs.deployment_type || 'feature-flags' }}
+
+        echo "approved=true" >> $GITHUB_OUTPUT
+
+    - name: Extract affected features
+      id: features
+      run: |
+        python scripts/commercial/extract-affected-features.py \
+          --previous-commit HEAD~1 \
+          --current-commit HEAD \
+          --output-file affected-features.json
+
+        echo "features=$(cat affected-features.json | jq -c)" >> $GITHUB_OUTPUT
+
+    - name: Analyze billing impact
+      id: billing
+      env:
+        BILLING_API_KEY: ${{ secrets.BILLING_API_KEY }}
+      run: |
+        python scripts/commercial/analyze-billing-impact.py \
+          --affected-features affected-features.json \
+          --billing-api-key $BILLING_API_KEY \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --output-file billing-impact.json
+
+        echo "impact=$(cat billing-impact.json | jq -c)" >> $GITHUB_OUTPUT
+
+    - name: Generate deployment plan
+      id: plan
+      run: |
+        python scripts/commercial/generate-deployment-plan.py \
+          --deployment-type ${{ github.event.inputs.deployment_type || 'feature-flags' }} \
+          --rollout-strategy ${{ github.event.inputs.rollout_strategy || 'gradual' }} \
+          --affected-features affected-features.json \
+          --billing-impact billing-impact.json \
+          --canary-percentage ${{ github.event.inputs.canary_percentage || '10' }} \
+          --output-file deployment-plan.json
+
+        echo "rollout-plan=$(cat deployment-plan.json | jq -c)" >> $GITHUB_OUTPUT
+
+    - name: Upload deployment artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: deployment-plan
+        path: |
+          deployment-plan.json
+          affected-features.json
+          billing-impact.json
+
+  # =============================================================================
+  # FEATURE FLAGS DEPLOYMENT
+  # =============================================================================
+  deploy-feature-flags:
+    needs: validate-commercial-changes
+    if: |
+      needs.validate-commercial-changes.outputs.deployment-approved == 'true' &&
+      (github.event.inputs.deployment_type == 'feature-flags' || github.event.inputs.deployment_type == 'ab-test-deployment')
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target_environment || 'staging' }}
+
+    strategy:
+      matrix:
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install deployment dependencies
+      run: |
+        pip install asyncpg redis pydantic
+
+    - name: Download deployment plan
+      uses: actions/download-artifact@v3
+      with:
+        name: deployment-plan
+
+    - name: Deploy feature flags
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(github.event.inputs.target_environment), upper(matrix.service))] }}
+        REDIS_URL: ${{ secrets[format('{0}_REDIS_URL', upper(github.event.inputs.target_environment))] }}
+        ROLLOUT_STRATEGY: ${{ github.event.inputs.rollout_strategy || 'gradual' }}
+      run: |
+        python scripts/commercial/deploy-feature-flags.py \
+          --database-url $DATABASE_URL \
+          --redis-url $REDIS_URL \
+          --service ${{ matrix.service }} \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --rollout-strategy $ROLLOUT_STRATEGY \
+          --deployment-plan deployment-plan.json
+
+    - name: Validate feature flag deployment
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(github.event.inputs.target_environment), upper(matrix.service))] }}
+        REDIS_URL: ${{ secrets[format('{0}_REDIS_URL', upper(github.event.inputs.target_environment))] }}
+      run: |
+        python scripts/commercial/validate-feature-deployment.py \
+          --database-url $DATABASE_URL \
+          --redis-url $REDIS_URL \
+          --service ${{ matrix.service }} \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --deployment-plan deployment-plan.json
+
+    - name: Initialize feature metrics tracking
+      env:
+        PROMETHEUS_GATEWAY: ${{ secrets.PROMETHEUS_PUSHGATEWAY_URL }}
+      run: |
+        python scripts/commercial/initialize-feature-metrics.py \
+          --service ${{ matrix.service }} \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --affected-features affected-features.json \
+          --prometheus-gateway $PROMETHEUS_GATEWAY
+
+  # =============================================================================
+  # A/B TEST DEPLOYMENT
+  # =============================================================================
+  deploy-ab-tests:
+    needs: validate-commercial-changes
+    if: |
+      needs.validate-commercial-changes.outputs.deployment-approved == 'true' &&
+      github.event.inputs.rollout_strategy == 'ab-test'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target_environment || 'staging' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install A/B testing dependencies
+      run: |
+        pip install asyncpg redis pydantic scipy
+
+    - name: Download deployment plan
+      uses: actions/download-artifact@v3
+      with:
+        name: deployment-plan
+
+    - name: Create A/B tests
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(github.event.inputs.target_environment))] }}
+        REDIS_URL: ${{ secrets[format('{0}_REDIS_URL', upper(github.event.inputs.target_environment))] }}
+      run: |
+        python scripts/commercial/create-ab-tests.py \
+          --database-url $DATABASE_URL \
+          --redis-url $REDIS_URL \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --deployment-plan deployment-plan.json \
+          --test-duration 30 \
+          --confidence-level 95
+
+    - name: Initialize A/B test tracking
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(github.event.inputs.target_environment))] }}
+        ANALYTICS_API_KEY: ${{ secrets.ANALYTICS_API_KEY }}
+      run: |
+        python scripts/commercial/initialize-ab-tracking.py \
+          --database-url $DATABASE_URL \
+          --analytics-api-key $ANALYTICS_API_KEY \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --deployment-plan deployment-plan.json
+
+  # =============================================================================
+  # SUBSCRIPTION QUOTA SYNCHRONIZATION
+  # =============================================================================
+  sync-subscription-quotas:
+    needs: deploy-feature-flags
+    if: |
+      always() &&
+      (needs.deploy-feature-flags.result == 'success' ||
+       github.event.inputs.deployment_type == 'subscription-update')
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target_environment || 'staging' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install subscription management dependencies
+      run: |
+        pip install asyncpg aiohttp pydantic
+
+    - name: Sync subscription quotas
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(github.event.inputs.target_environment))] }}
+        BILLING_API_KEY: ${{ secrets.BILLING_API_KEY }}
+      run: |
+        python scripts/commercial/sync-subscription-quotas.py \
+          --database-url $DATABASE_URL \
+          --billing-api-key $BILLING_API_KEY \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --sync-mode comprehensive
+
+    - name: Update usage monitoring
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(github.event.inputs.target_environment))] }}
+        PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
+      run: |
+        python scripts/commercial/update-usage-monitoring.py \
+          --database-url $DATABASE_URL \
+          --prometheus-url $PROMETHEUS_URL \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }}
+
+    - name: Validate quota enforcement
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(github.event.inputs.target_environment))] }}
+      run: |
+        python scripts/commercial/validate-quota-enforcement.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --test-scenarios comprehensive
+
+  # =============================================================================
+  # CANARY DEPLOYMENT
+  # =============================================================================
+  canary-deployment:
+    needs: validate-commercial-changes
+    if: |
+      needs.validate-commercial-changes.outputs.deployment-approved == 'true' &&
+      github.event.inputs.rollout_strategy == 'canary' &&
+      github.event.inputs.target_environment == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install canary deployment dependencies
+      run: |
+        pip install asyncpg redis prometheus-client
+
+    - name: Download deployment plan
+      uses: actions/download-artifact@v3
+      with:
+        name: deployment-plan
+
+    - name: Deploy to canary environment
+      env:
+        CANARY_DATABASE_URL: ${{ secrets.CANARY_PRO1_DATABASE_URL }}
+        CANARY_REDIS_URL: ${{ secrets.CANARY_REDIS_URL }}
+        CANARY_PERCENTAGE: ${{ github.event.inputs.canary_percentage || '10' }}
+      run: |
+        python scripts/commercial/canary-deployment.py \
+          --database-url $CANARY_DATABASE_URL \
+          --redis-url $CANARY_REDIS_URL \
+          --canary-percentage $CANARY_PERCENTAGE \
+          --deployment-plan deployment-plan.json
+
+    - name: Monitor canary metrics
+      env:
+        PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
+        CANARY_DURATION_MINUTES: ${{ github.event.inputs.canary_percentage == '5' && '15' || '30' }}
+      run: |
+        python scripts/commercial/monitor-canary-deployment.py \
+          --prometheus-url $PROMETHEUS_URL \
+          --duration-minutes $CANARY_DURATION_MINUTES \
+          --success-threshold 99.5 \
+          --error-threshold 0.1 \
+          --canary-percentage ${{ github.event.inputs.canary_percentage || '10' }}
+
+    - name: Evaluate canary performance
+      env:
+        PROMETHEUS_URL: ${{ secrets.PROMETHEUS_URL }}
+      run: |
+        python scripts/commercial/evaluate-canary-performance.py \
+          --prometheus-url $PROMETHEUS_URL \
+          --evaluation-metrics conversion_rate,error_rate,latency,user_engagement \
+          --success-criteria config/canary-success-criteria.yaml \
+          --output-file canary-evaluation.json
+
+    - name: Promote or rollback canary
+      env:
+        PROD_DATABASE_URL: ${{ secrets.PROD_PRO1_DATABASE_URL }}
+        CANARY_DATABASE_URL: ${{ secrets.CANARY_PRO1_DATABASE_URL }}
+      run: |
+        python scripts/commercial/canary-promotion.py \
+          --prod-db $PROD_DATABASE_URL \
+          --canary-db $CANARY_DATABASE_URL \
+          --evaluation-results canary-evaluation.json \
+          --auto-promote ${{ github.event.inputs.canary_percentage <= '10' && 'true' || 'false' }}
+
+  # =============================================================================
+  # BILLING SYSTEM SYNCHRONIZATION
+  # =============================================================================
+  billing-system-sync:
+    needs: [deploy-feature-flags, sync-subscription-quotas]
+    if: |
+      always() &&
+      (needs.deploy-feature-flags.result == 'success' ||
+       github.event.inputs.deployment_type == 'billing-sync')
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target_environment || 'staging' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install billing sync dependencies
+      run: |
+        pip install asyncpg aiohttp stripe
+
+    - name: Sync billing configurations
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(github.event.inputs.target_environment))] }}
+        STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+        BILLING_API_KEY: ${{ secrets.BILLING_API_KEY }}
+      run: |
+        python scripts/commercial/sync-billing-configurations.py \
+          --database-url $DATABASE_URL \
+          --stripe-api-key $STRIPE_API_KEY \
+          --billing-api-key $BILLING_API_KEY \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }}
+
+    - name: Update pricing tiers
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(github.event.inputs.target_environment))] }}
+        STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+      run: |
+        python scripts/commercial/update-pricing-tiers.py \
+          --database-url $DATABASE_URL \
+          --stripe-api-key $STRIPE_API_KEY \
+          --pricing-config config/pricing-tiers.yaml \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }}
+
+    - name: Validate billing integration
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(github.event.inputs.target_environment))] }}
+        STRIPE_API_KEY: ${{ secrets.STRIPE_API_KEY }}
+      run: |
+        python scripts/commercial/validate-billing-integration.py \
+          --database-url $DATABASE_URL \
+          --stripe-api-key $STRIPE_API_KEY \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --test-scenarios end-to-end
+
+  # =============================================================================
+  # COMMERCIAL METRICS MONITORING
+  # =============================================================================
+  monitor-commercial-metrics:
+    needs: [deploy-feature-flags, sync-subscription-quotas, billing-system-sync]
+    if: always()
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        environment:
+        - ${{ github.event.inputs.target_environment || 'staging' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install monitoring dependencies
+      run: |
+        pip install asyncpg prometheus-client pandas
+
+    - name: Monitor subscription conversion rates
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(matrix.environment))] }}
+        ANALYTICS_API_KEY: ${{ secrets.ANALYTICS_API_KEY }}
+      run: |
+        python scripts/commercial/monitor-conversion-rates.py \
+          --database-url $DATABASE_URL \
+          --analytics-api-key $ANALYTICS_API_KEY \
+          --environment ${{ matrix.environment }} \
+          --monitoring-window 3600
+
+    - name: Track feature usage metrics
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(matrix.environment))] }}
+        PROMETHEUS_GATEWAY: ${{ secrets.PROMETHEUS_PUSHGATEWAY_URL }}
+      run: |
+        python scripts/commercial/track-feature-usage.py \
+          --database-url $DATABASE_URL \
+          --prometheus-gateway $PROMETHEUS_GATEWAY \
+          --environment ${{ matrix.environment }}
+
+    - name: Analyze revenue impact
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(matrix.environment))] }}
+        BILLING_API_KEY: ${{ secrets.BILLING_API_KEY }}
+      run: |
+        python scripts/commercial/analyze-revenue-impact.py \
+          --database-url $DATABASE_URL \
+          --billing-api-key $BILLING_API_KEY \
+          --environment ${{ matrix.environment }} \
+          --baseline-period 30 \
+          --output-file revenue-impact-analysis.json
+
+    - name: Generate commercial dashboard
+      run: |
+        python scripts/commercial/generate-commercial-dashboard.py \
+          --environment ${{ matrix.environment }} \
+          --revenue-analysis revenue-impact-analysis.json \
+          --output-file commercial-dashboard.html
+
+    - name: Upload commercial metrics
+      uses: actions/upload-artifact@v3
+      with:
+        name: commercial-metrics-${{ matrix.environment }}
+        path: |
+          revenue-impact-analysis.json
+          commercial-dashboard.html
+
+  # =============================================================================
+  # AUTOMATED ROLLBACK
+  # =============================================================================
+  automated-rollback:
+    needs: [deploy-feature-flags, canary-deployment, monitor-commercial-metrics]
+    if: |
+      failure() &&
+      github.event.inputs.target_environment == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+
+    strategy:
+      matrix:
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install rollback dependencies
+      run: |
+        pip install asyncpg redis
+
+    - name: Execute automated rollback
+      env:
+        DATABASE_URL: ${{ secrets[format('PROD_{0}_DATABASE_URL', upper(matrix.service))] }}
+        REDIS_URL: ${{ secrets.PROD_REDIS_URL }}
+        BACKUP_DATABASE_URL: ${{ secrets[format('BACKUP_PROD_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/commercial/automated-rollback.py \
+          --database-url $DATABASE_URL \
+          --redis-url $REDIS_URL \
+          --backup-db $BACKUP_DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --rollback-reason "Commercial deployment failure"
+
+    - name: Notify rollback completion
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_COMMERCIAL_WEBHOOK }}
+        PAGERDUTY_API_KEY: ${{ secrets.PAGERDUTY_API_KEY }}
+      run: |
+        python scripts/notifications/send-rollback-notification.py \
+          --slack-webhook $SLACK_WEBHOOK \
+          --pagerduty-key $PAGERDUTY_API_KEY \
+          --service ${{ matrix.service }} \
+          --environment production \
+          --event-type commercial_rollback
+
+  # =============================================================================
+  # FINAL REPORTING AND NOTIFICATION
+  # =============================================================================
+  final-reporting:
+    needs: [deploy-feature-flags, sync-subscription-quotas, billing-system-sync, monitor-commercial-metrics]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all deployment artifacts
+      uses: actions/download-artifact@v3
+
+    - name: Generate comprehensive deployment report
+      run: |
+        python scripts/commercial/generate-deployment-report.py \
+          --workflow-run ${{ github.run_id }} \
+          --deployment-type ${{ github.event.inputs.deployment_type || 'feature-flags' }} \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --artifacts-dir . \
+          --output-file comprehensive-deployment-report.json
+
+    - name: Send deployment notifications
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_COMMERCIAL_WEBHOOK }}
+        EMAIL_API_KEY: ${{ secrets.EMAIL_API_KEY }}
+      run: |
+        python scripts/notifications/send-deployment-notification.py \
+          --slack-webhook $SLACK_WEBHOOK \
+          --email-api-key $EMAIL_API_KEY \
+          --report comprehensive-deployment-report.json \
+          --status ${{ job.status }}
+
+    - name: Update commercial documentation
+      if: success()
+      run: |
+        python scripts/documentation/update-commercial-docs.py \
+          --report comprehensive-deployment-report.json \
+          --docs-path docs/commercial/deployments/
+
+    - name: Upload final reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: comprehensive-deployment-report
+        path: comprehensive-deployment-report.json
+
+    - name: Commit commercial metrics
+      if: success() && github.event.inputs.target_environment == 'production'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+        # Create commercial metrics directory
+        mkdir -p metrics/commercial/$(date +%Y/%m/)
+
+        # Copy deployment report to metrics
+        cp comprehensive-deployment-report.json metrics/commercial/$(date +%Y/%m/)/deployment-$(date +%Y%m%d-%H%M).json
+
+        git add metrics/commercial/ docs/commercial/
+        git diff --staged --quiet || git commit -m "💰 Commercial deployment completed
+
+        Type: ${{ github.event.inputs.deployment_type || 'feature-flags' }}
+        Environment: ${{ github.event.inputs.target_environment || 'staging' }}
+        Strategy: ${{ github.event.inputs.rollout_strategy || 'gradual' }}
+
+        🤖 Generated with Claude Code (https://claude.ai/code)
+
+        Co-Authored-By: Claude <noreply@anthropic.com>"

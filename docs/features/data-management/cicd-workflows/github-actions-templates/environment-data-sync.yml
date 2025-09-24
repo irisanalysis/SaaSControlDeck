@@ -1,0 +1,546 @@
+# Environment Data Synchronization Workflow
+# Automated data sync between environments with sanitization
+
+name: Environment Data Synchronization
+
+on:
+  schedule:
+    # Daily sync from production to staging (2 AM UTC)
+    - cron: '0 2 * * *'
+    # Weekly full sync (Sunday 3 AM UTC)
+    - cron: '0 3 * * 0'
+
+  workflow_dispatch:
+    inputs:
+      source_environment:
+        description: 'Source environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+
+      target_environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - development
+
+      sync_type:
+        description: 'Synchronization type'
+        required: true
+        default: 'incremental'
+        type: choice
+        options:
+        - full
+        - incremental
+        - schema-only
+        - config-only
+
+      sanitization_level:
+        description: 'Data sanitization level'
+        required: true
+        default: 'high'
+        type: choice
+        options:
+        - low
+        - medium
+        - high
+        - maximum
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # =============================================================================
+  # SYNC VALIDATION AND SAFETY CHECKS
+  # =============================================================================
+  validate-sync-request:
+    runs-on: ubuntu-latest
+    outputs:
+      sync-allowed: ${{ steps.validate.outputs.allowed }}
+      sync-plan: ${{ steps.plan.outputs.sync-plan }}
+      estimated-duration: ${{ steps.estimate.outputs.duration }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        pip install asyncpg psycopg2-binary pydantic
+
+    - name: Validate sync direction
+      id: validate
+      run: |
+        SOURCE="${{ github.event.inputs.source_environment || 'production' }}"
+        TARGET="${{ github.event.inputs.target_environment || 'staging' }}"
+
+        # Prevent production contamination
+        if [[ "$TARGET" == "production" ]]; then
+          echo "❌ Cannot sync TO production environment"
+          echo "allowed=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        # Prevent development to staging sync
+        if [[ "$SOURCE" == "development" && "$TARGET" == "staging" ]]; then
+          echo "❌ Cannot sync from development to staging (wrong direction)"
+          echo "allowed=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        echo "✅ Sync direction validated: $SOURCE → $TARGET"
+        echo "allowed=true" >> $GITHUB_OUTPUT
+
+    - name: Generate sync plan
+      id: plan
+      if: steps.validate.outputs.allowed == 'true'
+      run: |
+        python scripts/sync/generate-sync-plan.py \
+          --source ${{ github.event.inputs.source_environment || 'production' }} \
+          --target ${{ github.event.inputs.target_environment || 'staging' }} \
+          --sync-type ${{ github.event.inputs.sync_type || 'incremental' }} \
+          --sanitization ${{ github.event.inputs.sanitization_level || 'high' }} \
+          --output-file sync-plan.json
+
+        echo "sync-plan=$(cat sync-plan.json | jq -c)" >> $GITHUB_OUTPUT
+
+    - name: Estimate sync duration
+      id: estimate
+      if: steps.validate.outputs.allowed == 'true'
+      run: |
+        python scripts/sync/estimate-sync-duration.py \
+          --sync-plan sync-plan.json \
+          --historical-data scripts/sync/historical-sync-times.json
+
+        echo "duration=$(cat duration-estimate.txt)" >> $GITHUB_OUTPUT
+
+    - name: Upload sync plan
+      if: steps.validate.outputs.allowed == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        name: sync-plan
+        path: sync-plan.json
+
+  # =============================================================================
+  # PRODUCTION TO STAGING SYNCHRONIZATION
+  # =============================================================================
+  sync-production-to-staging:
+    needs: validate-sync-request
+    if: |
+      needs.validate-sync-request.outputs.sync-allowed == 'true' &&
+      (github.event.inputs.source_environment == 'production' || github.event.schedule)
+    runs-on: ubuntu-latest
+    environment: staging
+
+    strategy:
+      matrix:
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install sync dependencies
+      run: |
+        pip install asyncpg psycopg2-binary faker cryptography pandas
+
+    - name: Download sync plan
+      uses: actions/download-artifact@v3
+      with:
+        name: sync-plan
+
+    - name: Create pre-sync backup
+      env:
+        TARGET_DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/sync/create-pre-sync-backup.py \
+          --database-url $TARGET_DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment staging \
+          --backup-type pre-sync
+
+    - name: Execute sanitized data sync
+      env:
+        SOURCE_DATABASE_URL: ${{ secrets[format('PROD_{0}_DATABASE_URL', upper(matrix.service))] }}
+        TARGET_DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+        ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
+      run: |
+        python scripts/sync/sanitized-data-sync.py \
+          --source-db $SOURCE_DATABASE_URL \
+          --target-db $TARGET_DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --sync-type ${{ github.event.inputs.sync_type || 'incremental' }} \
+          --sanitization-level ${{ github.event.inputs.sanitization_level || 'high' }} \
+          --sync-plan sync-plan.json
+
+    - name: Validate sync integrity
+      env:
+        TARGET_DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/sync/validate-sync-integrity.py \
+          --database-url $TARGET_DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment staging \
+          --validation-level comprehensive
+
+    - name: Update sync metadata
+      env:
+        TARGET_DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/sync/update-sync-metadata.py \
+          --database-url $TARGET_DATABASE_URL \
+          --sync-timestamp $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+          --source-environment production \
+          --target-environment staging \
+          --service ${{ matrix.service }}
+
+  # =============================================================================
+  # STAGING TO DEVELOPMENT SYNCHRONIZATION
+  # =============================================================================
+  sync-staging-to-development:
+    needs: [validate-sync-request, sync-production-to-staging]
+    if: |
+      needs.validate-sync-request.outputs.sync-allowed == 'true' &&
+      github.event.inputs.target_environment == 'development'
+    runs-on: ubuntu-latest
+    environment: development
+
+    strategy:
+      matrix:
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install sync dependencies
+      run: |
+        pip install asyncpg psycopg2-binary faker
+
+    - name: Download sync plan
+      uses: actions/download-artifact@v3
+      with:
+        name: sync-plan
+
+    - name: Create development backup
+      env:
+        TARGET_DATABASE_URL: ${{ secrets[format('DEV_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/sync/create-pre-sync-backup.py \
+          --database-url $TARGET_DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment development \
+          --backup-type pre-sync
+
+    - name: Execute development sync
+      env:
+        SOURCE_DATABASE_URL: ${{ secrets[format('STAGING_{0}_DATABASE_URL', upper(matrix.service))] }}
+        TARGET_DATABASE_URL: ${{ secrets[format('DEV_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/sync/development-data-sync.py \
+          --source-db $SOURCE_DATABASE_URL \
+          --target-db $TARGET_DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --sync-type ${{ github.event.inputs.sync_type || 'incremental' }} \
+          --development-mode true
+
+    - name: Generate development test data
+      env:
+        DATABASE_URL: ${{ secrets[format('DEV_{0}_DATABASE_URL', upper(matrix.service))] }}
+      run: |
+        python scripts/sync/generate-dev-test-data.py \
+          --database-url $DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --test-scenarios comprehensive
+
+  # =============================================================================
+  # CONFIGURATION SYNCHRONIZATION
+  # =============================================================================
+  sync-configurations:
+    needs: validate-sync-request
+    if: |
+      needs.validate-sync-request.outputs.sync-allowed == 'true' &&
+      (github.event.inputs.sync_type == 'config-only' || github.event.inputs.sync_type == 'full')
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        environment: [development, staging]
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Generate environment-specific configuration
+      run: |
+        python scripts/sync/generate-postgres-config.py \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --config-file scripts/postgres/environment-configs.yaml \
+          --output-dir config/postgres/
+
+    - name: Validate configuration syntax
+      run: |
+        python scripts/sync/validate-postgres-config.py \
+          --config-file config/postgres/${{ matrix.environment }}-${{ matrix.service }}.conf
+
+    - name: Apply configuration to database
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/sync/apply-postgres-config.py \
+          --database-url $DATABASE_URL \
+          --config-file config/postgres/${{ matrix.environment }}-${{ matrix.service }}.conf \
+          --environment ${{ matrix.environment }}
+
+    - name: Sync database permissions
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/sync/sync-database-permissions.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }}
+
+  # =============================================================================
+  # DATA CONSISTENCY VALIDATION
+  # =============================================================================
+  validate-data-consistency:
+    needs: [sync-production-to-staging, sync-staging-to-development, sync-configurations]
+    if: always() && (needs.sync-production-to-staging.result == 'success' || needs.sync-staging-to-development.result == 'success')
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        validation_pair:
+        - source: production
+          target: staging
+        - source: staging
+          target: development
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install validation dependencies
+      run: |
+        pip install asyncpg pandas numpy
+
+    - name: Validate cross-environment consistency
+      env:
+        SOURCE_DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(matrix.validation_pair.source))] }}
+        TARGET_DATABASE_URL: ${{ secrets[format('{0}_PRO1_DATABASE_URL', upper(matrix.validation_pair.target))] }}
+      run: |
+        python scripts/sync/validate-data-consistency.py \
+          --source-db $SOURCE_DATABASE_URL \
+          --target-db $TARGET_DATABASE_URL \
+          --source-env ${{ matrix.validation_pair.source }} \
+          --target-env ${{ matrix.validation_pair.target }} \
+          --output-file consistency-report-${{ matrix.validation_pair.source }}-${{ matrix.validation_pair.target }}.json
+
+    - name: Upload consistency report
+      uses: actions/upload-artifact@v3
+      with:
+        name: consistency-reports
+        path: consistency-report-*.json
+
+  # =============================================================================
+  # AUTOMATED QUALITY CHECKS
+  # =============================================================================
+  post-sync-quality-checks:
+    needs: [sync-production-to-staging, sync-staging-to-development, validate-data-consistency]
+    if: always() && (needs.sync-production-to-staging.result == 'success' || needs.sync-staging-to-development.result == 'success')
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        environment: [staging, development]
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install quality check dependencies
+      run: |
+        pip install asyncpg pandas numpy prometheus-client
+
+    - name: Execute data quality assessment
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/quality/data-quality-monitor.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }} \
+          --scope post-sync \
+          --output-file quality-report-${{ matrix.environment }}-${{ matrix.service }}.json
+
+    - name: Check referential integrity
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/sync/check-referential-integrity.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }}
+
+    - name: Validate business rules
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(matrix.environment), upper(matrix.service))] }}
+      run: |
+        python scripts/sync/validate-business-rules.py \
+          --database-url $DATABASE_URL \
+          --environment ${{ matrix.environment }} \
+          --service ${{ matrix.service }}
+
+  # =============================================================================
+  # NOTIFICATION AND REPORTING
+  # =============================================================================
+  notify-sync-completion:
+    needs: [sync-production-to-staging, sync-staging-to-development, validate-data-consistency, post-sync-quality-checks]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+
+    - name: Generate comprehensive sync report
+      run: |
+        python scripts/sync/generate-sync-report.py \
+          --workflow-run ${{ github.run_id }} \
+          --source-env ${{ github.event.inputs.source_environment || 'production' }} \
+          --target-env ${{ github.event.inputs.target_environment || 'staging' }} \
+          --sync-type ${{ github.event.inputs.sync_type || 'incremental' }} \
+          --artifacts-dir . \
+          --output-file comprehensive-sync-report.json
+
+    - name: Send Slack notification
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_DATA_SYNC_WEBHOOK }}
+      run: |
+        python scripts/notifications/send-sync-notification.py \
+          --webhook $SLACK_WEBHOOK \
+          --report comprehensive-sync-report.json \
+          --status ${{ job.status }}
+
+    - name: Update sync metrics
+      env:
+        PROMETHEUS_GATEWAY: ${{ secrets.PROMETHEUS_PUSHGATEWAY_URL }}
+      run: |
+        python scripts/sync/update-sync-metrics.py \
+          --prometheus-gateway $PROMETHEUS_GATEWAY \
+          --report comprehensive-sync-report.json
+
+    - name: Upload final report
+      uses: actions/upload-artifact@v3
+      with:
+        name: comprehensive-sync-report
+        path: comprehensive-sync-report.json
+
+    - name: Update sync documentation
+      if: success()
+      run: |
+        python scripts/documentation/update-sync-docs.py \
+          --report comprehensive-sync-report.json \
+          --docs-path docs/database/synchronization/
+
+    - name: Commit documentation updates
+      if: success()
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add docs/database/synchronization/
+        git diff --staged --quiet || git commit -m "📝 Update data synchronization documentation
+
+        Sync completed: ${{ github.event.inputs.source_environment || 'production' }} → ${{ github.event.inputs.target_environment || 'staging' }}
+        Type: ${{ github.event.inputs.sync_type || 'incremental' }}
+
+        🤖 Generated with Claude Code (https://claude.ai/code)
+
+        Co-Authored-By: Claude <noreply@anthropic.com>"
+
+  # =============================================================================
+  # EMERGENCY ROLLBACK
+  # =============================================================================
+  emergency-rollback:
+    if: failure() && github.event.inputs.target_environment != 'development'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target_environment || 'staging' }}
+
+    strategy:
+      matrix:
+        service: [pro1, pro2]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Execute emergency rollback
+      env:
+        DATABASE_URL: ${{ secrets[format('{0}_{1}_DATABASE_URL', upper(github.event.inputs.target_environment), upper(matrix.service))] }}
+        BACKUP_DATABASE_URL: ${{ secrets[format('BACKUP_{0}_{1}_DATABASE_URL', upper(github.event.inputs.target_environment), upper(matrix.service))] }}
+      run: |
+        python scripts/sync/emergency-rollback.py \
+          --database-url $DATABASE_URL \
+          --backup-db $BACKUP_DATABASE_URL \
+          --service ${{ matrix.service }} \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --rollback-reason "Sync process failed"
+
+    - name: Notify emergency rollback
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_EMERGENCY_WEBHOOK }}
+      run: |
+        python scripts/notifications/send-emergency-notification.py \
+          --webhook $SLACK_WEBHOOK \
+          --service ${{ matrix.service }} \
+          --environment ${{ github.event.inputs.target_environment || 'staging' }} \
+          --event-type sync_rollback \
+          --reason "Data synchronization failure"

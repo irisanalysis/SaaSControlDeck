@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
+import { AuthProvider } from "@/contexts/auth-context";
 import { SidebarProvider, Sidebar, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import Header from "@/components/layout/header";
@@ -27,17 +28,19 @@ export default function RootLayout({
           inter.variable
         )}
       >
-        <SidebarProvider>
-          <Sidebar variant="inset">
-            <AppSidebar />
-          </Sidebar>
-          <SidebarInset>
-            <Header />
-            <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-              {children}
-            </div>
-          </SidebarInset>
-        </SidebarProvider>
+        <AuthProvider>
+          <SidebarProvider>
+            <Sidebar variant="inset">
+              <AppSidebar />
+            </Sidebar>
+            <SidebarInset>
+              <Header />
+              <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+                {children}
+              </div>
+            </SidebarInset>
+          </SidebarProvider>
+        </AuthProvider>
         <Toaster />
       </body>
     </html>
