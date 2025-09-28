@@ -172,7 +172,7 @@ class DataSourceAPIClient {
       });
 
       // Set up the request with authentication
-      // 使用代理路由到后端上传端点：/api/upload/file -> /upload/file
+      // 使用API代理路由：/api/data/upload/file -> /upload/file
       xhr.open('POST', `${this.baseURL}/data/upload/file`);
 
       // Add authentication header if available
@@ -380,6 +380,101 @@ class DataSourceAPIClient {
   }
 
   // Data Management Methods
+
+  // 获取数据源列表 - 直接调用后端 API
+  async getDataSources(): Promise<{ success: boolean; data?: any; message?: string }> {
+    try {
+      // 调用后端的 /data/sources 端点
+      const response = await this.request<any>('/data/sources');
+      return {
+        success: true,
+        data: response
+      };
+    } catch (error) {
+      console.error('获取数据源列表失败:', error);
+      return {
+        success: false,
+        message: error instanceof DataSourceAPIError ? error.detail : 'Failed to fetch data sources'
+      };
+    }
+  }
+
+  // 获取单个数据源详情
+  async getDataSource(sourceId: string): Promise<{ success: boolean; data?: any; message?: string }> {
+    try {
+      const response = await this.request<any>(`/data/sources/${sourceId}`);
+      return {
+        success: true,
+        data: response
+      };
+    } catch (error) {
+      console.error('获取数据源详情失败:', error);
+      return {
+        success: false,
+        message: error instanceof DataSourceAPIError ? error.detail : 'Failed to fetch data source details'
+      };
+    }
+  }
+
+  // 更新数据源
+  async updateDataSource(
+    sourceId: string,
+    data: { name: string; description?: string; type: string }
+  ): Promise<{ success: boolean; data?: any; message?: string }> {
+    try {
+      const response = await this.request<any>(`/data/sources/${sourceId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+      return {
+        success: true,
+        data: response
+      };
+    } catch (error) {
+      console.error('更新数据源失败:', error);
+      return {
+        success: false,
+        message: error instanceof DataSourceAPIError ? error.detail : 'Failed to update data source'
+      };
+    }
+  }
+
+  // 删除数据源
+  async deleteDataSource(sourceId: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      const response = await this.request<any>(`/data/sources/${sourceId}`, {
+        method: 'DELETE',
+      });
+      return {
+        success: true,
+        message: response.message || '数据源删除成功'
+      };
+    } catch (error) {
+      console.error('删除数据源失败:', error);
+      return {
+        success: false,
+        message: error instanceof DataSourceAPIError ? error.detail : 'Failed to delete data source'
+      };
+    }
+  }
+
+  // 获取数据统计
+  async getDataStats(): Promise<{ success: boolean; data?: any; message?: string }> {
+    try {
+      const response = await this.request<any>('/data/stats');
+      return {
+        success: true,
+        data: response
+      };
+    } catch (error) {
+      console.error('获取数据统计失败:', error);
+      return {
+        success: false,
+        message: error instanceof DataSourceAPIError ? error.detail : 'Failed to fetch data stats'
+      };
+    }
+  }
+
   async listDatasets(params: {
     project_id?: number;
     status?: string;

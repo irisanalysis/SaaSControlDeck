@@ -1,0 +1,83 @@
+{
+  "timestamp": "2025-09-24T18:15:43.460454",
+  "validation_summary": {
+    "total_items": 12,
+    "passed_items": 11,
+    "failed_items": 1,
+    "success_rate_percent": 91.66666666666666
+  },
+  "validation_results": [
+    {
+      "name": "测试目录结构",
+      "type": "directory_structure",
+      "success": false,
+      "timestamp": "2025-09-24T18:15:43.361330"
+    },
+    {
+      "name": "后端API测试脚本",
+      "type": "python_script",
+      "success": true,
+      "timestamp": "2025-09-24T18:15:43.369539"
+    },
+    {
+      "name": "快速健康检查脚本",
+      "type": "python_script",
+      "success": true,
+      "timestamp": "2025-09-24T18:15:43.372892"
+    },
+    {
+      "name": "Studio Producer验证脚本",
+      "type": "python_script",
+      "success": true,
+      "timestamp": "2025-09-24T18:15:43.390722"
+    },
+    {
+      "name": "FastAPI迁移验证器",
+      "type": "python_script",
+      "success": true,
+      "timestamp": "2025-09-24T18:15:43.398461"
+    },
+    {
+      "name": "FastAPI迁移脚本",
+      "type": "python_script",
+      "success": true,
+      "timestamp": "2025-09-24T18:15:43.408087"
+    },
+    {
+      "name": "Docker构建验证脚本",
+      "type": "shell_script",
+      "success": true,
+      "timestamp": "2025-09-24T18:15:43.434520"
+    },
+    {
+      "name": "测试配置管理器",
+      "type": "python_script",
+      "success": true,
+      "timestamp": "2025-09-24T18:15:43.438853"
+    },
+    {
+      "name": "迁移回滚工具",
+      "type": "python_script",
+      "success": true,
+      "timestamp": "2025-09-24T18:15:43.442674"
+    },
+    {
+      "name": "全面测试运行器",
+      "type": "shell_script",
+      "success": true,
+      "timestamp": "2025-09-24T18:15:43.459978"
+    },
+    {
+      "name": "迁移索引文档",
+      "type": "documentation",
+      "success": true,
+      "timestamp": "2025-09-24T18:15:43.460298"
+    },
+    {
+      "name": "测试目录README",
+      "type": "documentation",
+      "success": true,
+      "timestamp": "2025-09-24T18:15:43.460423"
+    }
+  ]
+}

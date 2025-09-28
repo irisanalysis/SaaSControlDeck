@@ -1,0 +1,51 @@
+{
+  "services": {
+    "backend_pro1": {
+      "base_url": "http://localhost:8000",
+      "health_endpoint": "/health",
+      "docs_endpoint": "/docs",
+      "openapi_endpoint": "/openapi.json"
+    },
+    "backend_pro2": {
+      "base_url": "http://localhost:8100",
+      "health_endpoint": "/health"
+    },
+    "frontend": {
+      "base_url": "http://localhost:9000",
+      "health_endpoint": "/api/ready"
+    }
+  },
+  "test_environment": {
+    "timeout_seconds": 30,
+    "retry_attempts": 3,
+    "wait_between_retries": 1,
+    "log_level": "INFO"
+  },
+  "database": {
+    "dev_connection_string": "postgresql+asyncpg://saascontrol_dev_user:dev_pass_2024_secure@47.79.87.199:5432/saascontrol_dev_pro1",
+    "test_connection_string": "postgresql+asyncpg://saascontrol_test_user:test_pass_2024@47.79.87.199:5432/saascontrol_test_pro1"
+  },
+  "test_users": {
+    "default": {
+      "email": "test@saascontrol.dev",
+      "password": "TestPass123"
+    },
+    "admin": {
+      "email": "admin@saascontrol.dev",
+      "password": "AdminPass123"
+    }
+  },
+  "paths": {
+    "root_dir": "/home/user/studio",
+    "tests_dir": "/home/user/studio/tests",
+    "backend_dir": "/home/user/studio/backend/backend-pro1",
+    "reports_dir": "/home/user/studio/tests/reports",
+    "logs_dir": "/home/user/studio/tests/logs",
+    "temp_dir": "/home/user/studio/tests/temp"
+  },
+  "docker": {
+    "registry": "saascontrol",
+    "backend_image": "saascontrol-backend",
+    "test_container_prefix": "saascontrol-test"
+  }
+}

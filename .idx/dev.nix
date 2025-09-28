@@ -6,7 +6,7 @@
   # Use https://search.nixos.org/packages to find packages
   packages = [
     pkgs.sudo
-    pkgs.nodejs_20
+    pkgs.nodejs_22
     pkgs.zulu
     pkgs.uv
     pkgs.python3

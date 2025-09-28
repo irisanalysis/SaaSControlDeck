@@ -22,6 +22,7 @@ import {
   SquareTerminal,
   Users,
   Zap,
+  Chrome,
 } from "lucide-react";
 
 export type SidebarNavItem = {
@@ -185,6 +186,14 @@ export const defaultSidebarConfig: SidebarConfig = {
       href: "/knowledge",
       icon: BookOpen,
       description: "Guides, runbooks, and best practices.",
+    },
+    {
+      title: "Extension Compatibility",
+      href: "/extension-compatibility",
+      icon: Chrome,
+      description: "Browser extension conflict detection and troubleshooting.",
+      badge: "Tools",
+      badgeTone: "neutral",
     },
     {
       title: "Settings",

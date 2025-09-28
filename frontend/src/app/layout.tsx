@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/auth-context";
 import { SidebarProvider, Sidebar, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import Header from "@/components/layout/header";
+import { BrowserExtensionGuard } from "@/components/guards/browser-extension-guard";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -28,19 +29,21 @@ export default function RootLayout({
           inter.variable
         )}
       >
-        <AuthProvider>
-          <SidebarProvider>
-            <Sidebar variant="inset">
-              <AppSidebar />
-            </Sidebar>
-            <SidebarInset>
-              <Header />
-              <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-                {children}
-              </div>
-            </SidebarInset>
-          </SidebarProvider>
-        </AuthProvider>
+        <BrowserExtensionGuard>
+          <AuthProvider>
+            <SidebarProvider>
+              <Sidebar variant="inset">
+                <AppSidebar />
+              </Sidebar>
+              <SidebarInset>
+                <Header />
+                <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+                  {children}
+                </div>
+              </SidebarInset>
+            </SidebarProvider>
+          </AuthProvider>
+        </BrowserExtensionGuard>
         <Toaster />
       </body>
     </html>

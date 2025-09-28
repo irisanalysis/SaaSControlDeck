@@ -6,15 +6,22 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-// 数据服务端点配置（后端Data Service运行在8001端口）
+// 统一后端服务端点配置（FastAPI统一后端运行在8000端口）
 // 支持所有数据管理API，包括上传、预览和管理功能
-const BACKEND_BASE_URL = process.env.BACKEND_API_URL || 'http://localhost:8001';
+const BACKEND_BASE_URL = process.env.BACKEND_API_URL || 'http://localhost:8000';
 
 async function proxyToBackend(request: NextRequest, method: string) {
   try {
     const url = new URL(request.url);
-    // 正确处理路径映射：/api/data/upload/file -> /upload/file
-    const path = url.pathname.replace('/api/data', '');
+    // 处理路径映射：
+    // /api/data/upload/file -> /upload/file
+    // /api/data/sources -> /data/sources
+    let path = url.pathname.replace('/api/data', '');
+
+    // 特殊处理：对于data相关的端点，需要保留/data前缀
+    if (path.startsWith('/sources') || path.startsWith('/stats')) {
+      path = '/data' + path;
+    }
     const backendUrl = `${BACKEND_BASE_URL}${path}${url.search}`;
 
     console.log(`[Data Proxy] ${method} ${path} -> ${backendUrl}`);

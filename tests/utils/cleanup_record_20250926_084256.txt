@@ -1,0 +1,30 @@
+SaaS Control Deck 根目录清理记录
+执行时间: 2025-09-26 08:42:56
+==================================================
+
+已删除的测试文件:
+  - check_current_backend.py
+  - direct_health_test.py
+  - execute_health_check.py
+  - install_migration_deps.py
+  - migration_report.py
+  - quick_service_check.py
+  - run_quick_health_check.py
+  - studio_producer_validation.py
+  - test_fastapi_migration.py
+  - start_fastapi_backend.py
+  - migrate_to_fastapi.py
+  - migration_example_fastapi.py
+  - migration_status_verifier.py
+  - safe_cleanup_test_files.py
+
+已移动到.archive的后端文件:
+  - unified_backend_simple.py -> .archive/systems/backend/legacy-implementations/
+  - unified_backend.py -> .archive/systems/backend/legacy-implementations/
+  - unified_backend_professional.py -> .archive/systems/backend/legacy-implementations/
+  - simple_backend.py -> .archive/systems/backend/legacy-implementations/
+  - unified_backend_simple_8002.py -> .archive/systems/backend/legacy-implementations/
+  - simple_auth.py -> .archive/systems/backend/legacy-implementations/
+  - auth_server.py -> .archive/systems/backend/legacy-implementations/
+
+备份记录保存在: /home/user/studio/tests/utils/cleanup_record_20250926_084256.txt

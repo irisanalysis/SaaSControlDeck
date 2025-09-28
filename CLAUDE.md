@@ -18,10 +18,17 @@ This is a full-stack AI data analysis platform with a modern monorepo structure:
 - Firebase Studio Nix environment (Port 9000)
 
 **Backend Stack:**
-- FastAPI microservices (API Gateway, Data Service, AI Service)
+- **✅ FastAPI + uvicorn** (2025-09-24 升级完成)
 - Multi-project isolation (backend-pro1: 8000-8099, backend-pro2: 8100-8199)
 - PostgreSQL, Redis, MinIO, Ray distributed computing
 - Docker containerization with Prometheus monitoring
+
+**🚀 最新后端启动命令 (FastAPI)**:
+```bash
+cd /home/user/studio/backend/backend-pro1
+source .venv/bin/activate
+uvicorn unified_backend_fastapi:app --reload --port 8000 --host 0.0.0.0
+```
 
 **🗄️ Production Database Architecture**:
 - **Cloud PostgreSQL**: 47.79.87.199:5432 (Deployed 2025-09-16)
@@ -158,23 +165,22 @@ npm run genkit:dev    # 启动Genkit开发服务器
 npm run genkit:watch  # 启动Genkit文件监控模式
 ```
 
-### 🐍 **后端开发命令 (UV虚拟环境)**
+### 🐍 **后端开发命令 (FastAPI + uvicorn)**
 ```bash
-# ⚠️ 所有后端Python开发必须使用UV虚拟环境
+# ✅ FastAPI统一后端服务 (2025-09-24升级)
 
-# 初始化UV环境（首次设置）
+# 启动主后端服务
 cd backend/backend-pro1
-uv venv
-uv shell
+source .venv/bin/activate
+uvicorn unified_backend_fastapi:app --reload --port 8000 --host 0.0.0.0
 
-# 安装项目依赖
+# 验证服务状态
+curl http://localhost:8000/health    # 健康检查
+curl http://localhost:8000/docs      # API文档
+
+# Legacy: UV虚拟环境命令（用于其他微服务）
 uv sync                    # 同步pyproject.toml中的依赖
 uv add fastapi uvicorn    # 添加新的依赖包
-
-# 启动后端服务（在UV环境中）
-uv shell                           # 激活虚拟环境
-uv run uvicorn data-service.app.main:app --reload --port 8001    # 数据服务 (开发模式)
-uv run uvicorn data-service.app.main:app --host 0.0.0.0 --port 8001    # 生产模式
 
 # 数据库操作
 uv run python scripts/apply_base_schema.py    # 应用数据库架构
@@ -182,24 +188,23 @@ uv run python scripts/apply_migrations.py    # 运行数据库迁移
 
 # 测试命令
 uv run pytest tests/                          # 运行测试套件
-uv run python scripts/test_data_apis.py      # 测试数据API
 ```
 
 ### ⚡ **快速启动流程**
 ```bash
-# 完整系统启动
+# ✅ 完整系统启动 (FastAPI升级后)
 cd /home/user/studio
 
-# 1. 后端启动（UV + Uvicorn）
+# 1. FastAPI后端启动
 cd backend/backend-pro1
-uv shell
-uv run uvicorn data-service.app.main:app --reload --port 8001 &
+source .venv/bin/activate
+uvicorn unified_backend_fastapi:app --reload --port 8000 --host 0.0.0.0 &
 
 # 2. 前端自动启动（Firebase Studio管理）
 # 无需手动操作 - 访问 http://localhost:9000
 
 # 3. 验证服务状态
-curl http://localhost:8001/health    # 数据服务健康检查
+curl http://localhost:8000/health    # FastAPI健康检查
 curl http://localhost:9000/api/ready # 前端API检查
 ```
 

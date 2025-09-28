@@ -1,0 +1,60 @@
+SaaS Control Deck 根目录清理记录
+执行时间: 2025-09-26
+Studio Producer: 协调清理任务
+==================================================
+
+清理原因:
+完成测试脚本迁移后的根目录整理，移除已迁移文件以保持项目结构整洁
+
+已删除的测试文件 (仅包含迁移标记):
+  - check_current_backend.py -> tests/backend/validation/backend_status_check.py
+  - direct_health_test.py -> tests/backend/health/direct_health_test.py
+  - execute_health_check.py -> tests/backend/health/health_check_executor.py
+  - install_migration_deps.py -> tests/migration/fastapi_migration/dependency_installer.py
+  - migration_report.py -> tests/migration/fastapi_migration/migration_reporter.py
+  - quick_service_check.py -> tests/backend/health/quick_health_check.py
+  - run_quick_health_check.py -> tests/backend/health/comprehensive_health_check.py
+  - studio_producer_validation.py -> tests/backend/validation/producer_validation.py
+  - test_fastapi_migration.py -> tests/backend/api/fastapi_migration_test.py
+  - start_fastapi_backend.py -> tests/migration/fastapi_migration/backend_starter.py
+  - migrate_to_fastapi.py -> tests/migration/fastapi_migration/migrate_to_fastapi.py
+  - migration_example_fastapi.py -> 临时示例文件
+
+已归档的Legacy后端文件 (移至 .archive/):
+  - unified_backend_simple.py -> .archive/systems/backend/legacy-implementations/
+  - unified_backend.py -> .archive/systems/backend/legacy-implementations/
+  - unified_backend_professional.py -> .archive/systems/backend/legacy-implementations/
+  - simple_backend.py -> .archive/systems/backend/legacy-implementations/
+  - unified_backend_simple_8002.py -> .archive/systems/backend/legacy-implementations/
+  - simple_auth.py -> .archive/systems/backend/legacy-implementations/
+  - auth_server.py -> .archive/systems/backend/legacy-implementations/
+
+临时工具文件 (已删除):
+  - migration_status_verifier.py -> 临时验证脚本
+  - safe_cleanup_test_files.py -> 临时清理脚本
+
+验证措施:
+✅ 所有删除的文件都已确认只包含迁移标记或已替代标记
+✅ 所有功能文件都已在tests目录中有对应版本
+✅ Legacy文件已安全归档到.archive目录
+✅ 保留了完整的迁移映射记录
+
+风险控制:
+- 所有文件在删除前都已验证内容
+- 仅删除包含"已迁移到"标记的文件
+- Legacy文件移至archive而非直接删除
+- 完整的恢复记录和路径映射
+
+恢复方法:
+如需恢复任何文件，请参考:
+1. 测试文件: 使用tests目录下的对应版本
+2. Legacy文件: 从.archive/systems/backend/legacy-implementations/恢复
+3. 迁移映射: 参考tests/migration_index.md
+
+清理结果:
+🎯 根目录结构更加整洁专业
+✅ 所有测试功能保持完整
+📦 历史文件安全归档
+📋 完整记录便于追踪
+
+备份记录保存在: /home/user/studio/tests/utils/cleanup_record_20250926.txt

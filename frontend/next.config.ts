@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
   },
 
 
-  // Security headers
+  // Security headers with extension conflict mitigation
   async headers() {
     return [
       {
@@ -45,6 +45,14 @@ const nextConfig: NextConfig = {
           {
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=()',
+          },
+          {
+            key: 'Content-Security-Policy',
+            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' http://localhost:* https://*; font-src 'self' data:;",
+          },
+          {
+            key: 'X-Application-Context',
+            value: 'SaaS-Control-Deck',
           },
         ],
       },

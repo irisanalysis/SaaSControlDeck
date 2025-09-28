@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { Database, Plus, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ProtectedRoute } from '@/components/auth';
 import { DataSource } from '@/lib/api/types/data-sources';
+import dataSourceAPI from '@/lib/api/data-sources';
 
 // 动态导入大型组件以优化首屏加载
 const DataSourceConnection = dynamic(
@@ -24,13 +25,77 @@ const DataSourceConnection = dynamic(
 function DataManagementContent() {
   const [showConnection, setShowConnection] = useState(false);
   const [connectedSources, setConnectedSources] = useState<DataSource[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Mock project ID - in a real app, this would come from routing or context
   const projectId = 1;
 
+  // 页面加载时获取已存在的数据源
+  useEffect(() => {
+    let isMounted = true; // 防止组件卸载后继续设置状态
+
+    const loadDataSources = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const response = await dataSourceAPI.getDataSources();
+
+        if (response.success && response.data) {
+          // 转换后端返回的数据格式为前端DataSource格式
+          const dataSources: DataSource[] = response.data.data_sources.map((source: any, index: number) => ({
+            id: source.id ?
+                Math.abs(source.id.split('').reduce((a: number, b: string) => a + b.charCodeAt(0), 0)) :
+                Date.now() + index,
+            name: source.name,
+            type: source.type as 'csv' | 'json' | 'excel' | 'parquet',
+            status: source.status === 'active' ? 'ready' : source.status,
+            file_size: source.file_size || null,
+            rows_count: source.rows_count || null,
+            columns_count: source.columns_count || null,
+            created_at: source.created_at,
+            updated_at: source.created_at,
+          }));
+
+          if (isMounted) {
+            setConnectedSources(dataSources);
+            console.log(`✅ 从数据库加载了 ${dataSources.length} 个数据源`);
+          }
+        } else {
+          if (isMounted) {
+            console.log('📊 没有找到数据源或响应格式错误');
+            setConnectedSources([]);
+          }
+        }
+      } catch (err) {
+        if (isMounted) {
+          console.error('❌ 加载数据源失败:', err);
+          const errorMessage = err instanceof Error ? err.message : '加载数据源失败';
+          setError(errorMessage);
+          setConnectedSources([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadDataSources();
+
+    return () => {
+      isMounted = false; // 清理函数，防止内存泄漏
+    };
+  }, []);
+
   const handleConnectionComplete = (dataset: DataSource) => {
     setConnectedSources(prev => [...prev, dataset]);
     setShowConnection(false);
+    console.log('✅ 新数据源已添加:', dataset.name);
+
+    // 重新加载数据源列表以保持同步
+    window.location.reload();
   };
 
   const handleCancelConnection = () => {
@@ -75,8 +140,37 @@ function DataManagementContent() {
         </Button>
       </div>
 
-      {/* Connected Sources */}
-      {connectedSources.length > 0 ? (
+      {/* Loading State */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center space-y-2">
+            <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto"></div>
+            <p className="text-muted-foreground">加载数据源中...</p>
+          </div>
+        </div>
+      ) : error ? (
+        /* Error State */
+        <div className="text-center py-12">
+          <div className="space-y-4">
+            <div className="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center">
+              <div className="w-8 h-8 text-red-600">⚠️</div>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-red-600">加载失败</h3>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                {error}
+              </p>
+            </div>
+            <Button
+              onClick={() => window.location.reload()}
+              variant="outline"
+            >
+              重新加载
+            </Button>
+          </div>
+        </div>
+      ) : /* Connected Sources */
+      connectedSources.length > 0 ? (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Connected Data Sources</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
