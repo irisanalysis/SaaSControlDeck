@@ -30,7 +30,7 @@ pyarrow==14.0.1  # Parquet文件支持
 chardet==5.2.0   # 字符编码检测
 
 # 验证和序列化
-pydantic==2.5.0
+pydantic==2.11.7
 pydantic-settings==2.1.0
 email-validator==2.1.0
 
